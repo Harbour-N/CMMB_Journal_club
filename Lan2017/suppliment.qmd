@@ -1,0 +1,122 @@
+---
+title: Fate mapping of human glioblastoma reveals an invariant stem cell hierarchy
+discription: Go over the suplimenrary material from the paper and recreate some of the simulations
+author: 
+  - name: Nicholas Harbour
+format: 
+  html:
+    embed-resources: true
+    code-fold: true
+    number-sections: true
+    toc: true
+    toc-depth: 3
+    date-modified: last-modified
+    date-format: "MMMM DD, YYYY, HH:mm:ss"
+jupyter: python3
+---
+
+```{python}
+# Load libraries
+import numpy as np
+import matplotlib.pyplot as plt
+import scipy.stats as stats
+```
+
+
+Find paper here: [Fate mapping of human glioblastoma reveals an invariant stem cell hierarchy](https://www.nature.com/articles/nature23666)
+
+# Statistical properties of lentiviral barcoding
+
+Lentiviral barcoding relies on the random infection of cells. While it entails the possibility to uniquely identify clone lineages the randomness of the barcoding procedure may lead to the same cell acquiring multiple barcodes or to the same barcode being present in more than one cell. Since this can affect the statistical properties of the derived barcode frequency distributions, we here give an estimate for the relative amount of multiply labelled cells and barcodes present in multiple cells.
+
+For a library consisting of $N_B$ unique barcodes, with a barcoding event occurring with probability $p_B$, the number $n_B$ of barcodes acquired by a single cell follows the binomial distribution: $Q(n_B) = \binom{N_B}{n_B} p_B^{n_B} (1-p_B)^{N_B-n_B}$ (This is the probability mass function).
+
+
+In probability theory and statistics, the [binomial distribution](https://en.wikipedia.org/wiki/Binomial_distribution) with parameters n and p is the discrete probability distribution of the number of successes in a sequence of n independent experiments, each asking a yes-no question, and each with its own Boolean-valued outcome: success (with probability p) or failure (with probability q = 1 - p). 
+ 
+
+In the paper [Fate mapping of human glioblastoma reveals an invariant stem cell hierarchy](https://www.nature.com/articles/nature23666) they reference this [Clonal Analysis via Barcoding Reveals Diverse Growth and Differentiation of Transplanted Mouse and Human Mammary Stem Cells](https://www.cell.com/cell-stem-cell/fulltext/S1934-5909(13)00560-2?large_figure=true) Which mentions $2 \times 10^5$ unique barcodes (and this number os also given in the paper).
+
+```{python}
+
+# lets say that we have a library of 10^5 barcodes
+N_B = 2*10**5 # 
+# We have a probability of a cell being infected
+p_B = 0.000001 
+
+# We can calculate the probability of a cell being infected with 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 barcodes
+n_B = np.arange(0, 10,1)
+
+Q = stats.binom.pmf(n_B, N_B, p_B)
+
+# display the probability mass functiom
+fig, ax = plt.subplots(1, 1)
+ax.plot(n_B, Q, 'bo', ms=8, label='binom pmf')
+ax.vlines(n_B, 0, Q, colors='b', lw=5, alpha=0.5)
+ax.set_title(f'Probability mass function. \n Number unique barcodes: {N_B}, probability of infection: {p_B}')
+ax.set_xlabel('Number of barcodes')
+ax.set_ylabel('Probability')
+plt.show()
+
+```
+
+For large $N_B$ the distribution Q can be approximated by a Poisson distribution:
+
+$$
+Q(n_B) \approx \frac{e^{-N_B p_B} (N_B p_B)^{n_B}}{n_B!}
+$$
+
+```{python}
+
+# Compare the binomial distribution with the poisson distribution
+Q_poisson = stats.poisson.pmf(n_B, N_B*p_B)
+
+fig, ax = plt.subplots(1, 1)
+ax.plot(n_B, Q, 'bo', ms=8, label='binom pmf')
+ax.plot(n_B, Q_poisson, 'r--', label='poisson pmf')
+ax.vlines(n_B, 0, Q, colors='b', lw=5, alpha=0.5)
+ax.set_title(f'Probability mass function. \n Number unique barcodes: {N_B}, probability of infection: {p_B}')
+ax.set_xlabel('Number of barcodes')
+ax.set_ylabel('Probability')
+ax.legend()
+plt.show()
+
+```
+
+The relative amount of unlabelled cells, $Q_0 = Q(0)$, the relative amount of cells labelled with 1 barcode is $Q_1 = Q(1)$ and the relative amount of cells labelled with more than 1 barcode s $Q_{>1} = \sum_{n_B > 1} Q(n_B)$. and are obtained as
+
+$$
+    Q_0 = e^{-N_B p_B}, \quad Q_1 = N_B p_B e^{-N_B p_B}, \quad Q_{>1} = 1 - Q_0 - Q_1 = 1 - (1 + N_B p_B) e^{-N_B p_B}
+$$
+
+The parameter $\nu = N_B p_B$  characterises the distribution of barcodes and can be obtained from the labelling efficiency $\eta$, which denotes the relative amount of cells that bear at least 1 barcode, by requiring $1 - Q_0 = \eta$, this gives
+
+$$
+    \nu = -ln(1 - \eta)
+$$
+
+Conversly we can ask how likely is it that the same barcode appears in multiple cells. Out of a total of $N_C$ cells prepared for barcoding, the number $n_C$ of cells acquiring the same barcode is distirubted according to $R(n_C) = P_{Binomial}(n_C | N_C, p_B)$. Again for large number of cells $N_C$ the distribution can be approximated by a Poisson distribution:
+
+$$
+    R(n_C) \approx \frac{e^{-N_C p_B} (N_C p_B)^{n_C}}{n_C!}
+$$
+
+Analogously we can find the relative amount of barcodes that are present in no cell $R_0 = R(0) = e^{-N_C p_B}$, the relative amount of barcodes present in 1 cell $R_1 = R(1) = N_C p_B e^{-N_C p_B}$ and the relative amount of barcodes present in more than 1 cell $R_{>1} = \sum_{n_C > 1} 1 - (1 + N_C p_B)e^{-N_C p_B}$.
+
+Multiple barcoding of the same cell is unproblematic for analysis of barcode frequency distributions. On the other hand, barcodes distributed to multiple cells leads to an effective merging of the size of derived clones and thus may alter the statistical properties of the barcode frequency distribution. Among labelled cells the relative amount of uniquely labelled cells (i.e., a combination of one or more barcodes) is given by
+
+$$
+    \mathbfcal{Q} = \frac{1}{1 - Q_0} \sum_{n_B =1}^{\infty} Q(n_B)[(1 - p_B)^{N_C -1}]^{n_B} 
+$$
+
+where, 
+- $\mathbfcal{Q}$  = the fraction of cells that are uniquely labelled with at least 1 barcode.
+- The summation runs over $n_B$ which represents the number of barcodes assigned to a cell.
+- $Q(n_B)$ = the relative amount of cells labelled with $n_B$ barcodes.
+- $(1-p_B)^{N_C-1}$ = the probability that a given cell does not acquire a specific barcode, given that there are $N_C -1$ other cells. This term is raised to the power $n_B$ indicating that this probability applies to each of the $n_B$ barcodes. This term accounts for the likelihood that if a cell has $n_B$ barcodes it has not acquifed any of the barcodes present in other cells. (the more barcodes a cell has the less likely it is that those barcodes are unique to that cell.)
+- $\frac{1}{1-Q_0}$ = normalization the calculation to only consider labelled cells.
+
+```{python}
+
+
+```
