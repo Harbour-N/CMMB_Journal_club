@@ -7,6 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Nicholas Harbour">
+<meta name="description" content="Go over the suplimenrary material from the paper and recreate some of the simulations">
 
 <title>Fate mapping of human glioblastoma reveals an invariant stem cell hierarchy</title>
 <style>
@@ -3235,6 +3236,11 @@ window.Quarto = {
 <h1 class="title">Fate mapping of human glioblastoma reveals an invariant stem cell hierarchy</h1>
 </div>
 
+<div>
+  <div class="description">
+    Go over the suplimenrary material from the paper and recreate some of the simulations
+  </div>
+</div>
 
 
 <div class="quarto-title-meta">
@@ -3250,7 +3256,7 @@ window.Quarto = {
     <div>
     <div class="quarto-title-meta-heading">Modified</div>
     <div class="quarto-title-meta-contents">
-      <p class="date-modified">November 08, 2024, 12:03:49</p>
+      <p class="date-modified">November 08, 2024, 12:20:47</p>
     </div>
   </div>
     
@@ -3261,7 +3267,7 @@ window.Quarto = {
 </header>
 
 
-<div id="1193f55a" class="cell" data-execution_count="1">
+<div id="a3ad9c07" class="cell" data-execution_count="1">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Load libraries</span></span>
@@ -3277,7 +3283,7 @@ window.Quarto = {
 <p>For a library consisting of <span class="math inline">\(N_B\)</span> unique barcodes, with a barcoding event occurring with probability <span class="math inline">\(p_B\)</span>, the number <span class="math inline">\(n_B\)</span> of barcodes acquired by a single cell follows the binomial distribution: <span class="math inline">\(Q(n_B) = \binom{N_B}{n_B} p_B^{n_B} (1-p_B)^{N_B-n_B}\)</span> (This is the probability mass function).</p>
 <p>In probability theory and statistics, the <a href="https://en.wikipedia.org/wiki/Binomial_distribution">binomial distribution</a> with parameters n and p is the discrete probability distribution of the number of successes in a sequence of n independent experiments, each asking a yes-no question, and each with its own Boolean-valued outcome: success (with probability p) or failure (with probability q = 1 - p).</p>
 <p>In the paper <a href="https://www.nature.com/articles/nature23666">Fate mapping of human glioblastoma reveals an invariant stem cell hierarchy</a> they reference this <a href="https://www.cell.com/cell-stem-cell/fulltext/S1934-5909(13)00560-2?large_figure=true">Clonal Analysis via Barcoding Reveals Diverse Growth and Differentiation of Transplanted Mouse and Human Mammary Stem Cells</a> Which mentions <span class="math inline">\(2 \times 10^5\)</span> unique barcodes (and this number os also given in the paper).</p>
-<div id="43dd6d71" class="cell" data-execution_count="2">
+<div id="9fa582ad" class="cell" data-execution_count="2">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># lets say that we have a library of 10^5 barcodes</span></span>
@@ -3311,7 +3317,7 @@ window.Quarto = {
 <p><span class="math display">\[
 Q(n_B) \approx \frac{e^{-N_B p_B} (N_B p_B)^{n_B}}{n_B!}
 \]</span></p>
-<div id="c47ed990" class="cell" data-execution_count="3">
+<div id="af833d0b" class="cell" data-execution_count="3">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Compare the binomial distribution with the poisson distribution</span></span>

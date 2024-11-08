@@ -1,6 +1,6 @@
 ---
 title: Fate mapping of human glioblastoma reveals an invariant stem cell hierarchy
-discription: Go over the suplimenrary material from the paper and recreate some of the simulations
+description: Go over the supplementary material from the paper and recreate some of the simulations
 author: 
   - name: Nicholas Harbour
 format: 
