@@ -3,7 +3,7 @@ import scipy.stats
 import matplotlib.pyplot as plt
 import math
 
-init_population=np.array([1,0]) #inital condition
+init_population=np.array([1,0]) #inital condition (start with a single GSC (s) cell)
 population=init_population
 #the effect each transition has on the states:
 state_changes= np.array([

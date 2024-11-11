@@ -120,3 +120,106 @@ where,
 
 
 ```
+
+
+# Asymmetric divsion model
+
+This model can be described by the master equation:
+
+$$
+    \frac{\partial P}{\partial t} = \left(\omega (P(n-1,t) - 1) + 0.5 \lambda (n -1)P(n-1,t) + 0.5 \lambda (n+1)P(n+1,t) - \lambda n \right) P(n,t)
+$$
+
+In this model it is assumed only asymmetric division of GSCs can occur so they cannot increase in number.
+
+Consider only a single passage
+
+```{python}
+
+def gillespie(t_start,t_stop,omega, lam, population, state_changes,l,logl,time_points):
+    t=t_start
+    while t<t_stop:
+        s,p=population 
+
+        prob=np.array([omega*s, 0.5*lam*p, 0.5*lam*p]) #probability of each transition happening
+
+        del_t=np.random.exponential(1/(np.sum(prob))) #choosing a time change from an exponential distribution
+
+        state=stats.rv_discrete(values=([0,1,2],[prob[0]/np.sum(prob), prob[1]/np.sum(prob), prob[2]/np.sum(prob)])).rvs() #choosing a state change from a discrete distribution 
+        t=t+del_t #updating the time
+        population=population+state_changes[state] #updating the population
+        l.append(p+1)
+        logl.append(np.log(p+1))
+        time_points.append(t)
+    return population, l,logl, time_points
+
+final_time = 500
+start_time = 0
+init_population=np.array([1,0]) #inital condition (start with a single GSC (s) cell)
+#the effect each transition has on the states:
+state_changes= np.array([
+        [0,1], #The stem cell divides asymmetrically
+        [0,1], #The progenitor cells divides symmetrically
+        [0,-1], #The progenitor cell dies
+    ])
+l=[]
+logl=[]
+time_points=[]
+
+num_sims = 4
+
+plt.figure()
+
+for i in range(num_sims):
+    population,l,logl,time_points=gillespie(t_start=start_time,t_stop=final_time,omega=0.07,lam=0.7,population=init_population, state_changes=state_changes, l=l,logl=logl, time_points=time_points)
+    plt.plot(time_points,l)
+    l = []
+    time_points = []
+    logl = []
+
+
+plt.ylabel('Clone Size')
+plt.xlabel('Time')
+plt.title('Model simulations on a logarithmic scale')
+plt.show()
+plt.clf()
+
+
+```
+
+I believe that the final colony size should follow a negative binomial disitibution
+
+The master equation has an analytical solution, given by the negative binomial disitrubtion:
+
+$$
+    P(n,t) = \frac{1}{n!}\frac{\Gamma(\zeta+n)}{\Gamma(\zeta)}(\frac{n_0(t)}{(1 + n_0(t))})^n(1 - \frac{n_0(t)}{1+n_0(t)})^\zeta
+$$
+
+where $n_0(t) = \lambda t / 2$ (a dimensionless parameter) and $\zeta = 2 \omega / \lambda$ is the ratio immigartion rate and progenitor loss and replacement rate. And $\Gamma(x) = \int_0^\infty u^{x-1}e^{-u} $ is the Gamma function
+
+Do this for multiple stopping times and compare to analytical solution / negative binomial distriubtion!
+
+```{python}
+
+# number of sims equivalent to number of starting cells infected with virus barcoding
+num_sims = 1000
+final_colony_size = np.zeros(num_sims)
+
+plt.figure()
+
+for i in range(0,num_sims,100):
+    population,l,logl,time_points=gillespie(t_start=start_time,t_stop=final_time,omega=0.07,lam=0.7,population=init_population, state_changes=state_changes, l=l,logl=logl, time_points=time_points)
+    plt.plot(time_points,l)
+    final_colony_size[i] = l[-1]
+    l = []
+    time_points = []
+    logl = []
+
+
+plt.show()
+
+plt.hist(final_colony_size)
+
+plt.show()
+
+```
