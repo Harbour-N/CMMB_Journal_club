@@ -32,7 +32,7 @@ def gillespie(t_start,t_stop,omega, lam, population, state_changes,l,logl,time_p
         time_points.append(t)
     return population, l,logl, time_points
 
-passage_times=np.array([0,100,200,300])
+passage_times=np.array([0,500,1000,1500])
 passage_start_amounts=np.array([[1,0],[1,2],[1,2]])
 
 for j in range(5):
@@ -50,7 +50,8 @@ for j in range(5):
 
 plt.ylabel('Clone Size')
 plt.xlabel('Time')
-plt.axvline(200)
-plt.axvline(100)
+plt.axvline(500)
+plt.axvline(1000)
 plt.title('Model simulations on a logarithmic scale')
 plt.show()
+plt.clf()
