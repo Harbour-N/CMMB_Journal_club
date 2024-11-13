@@ -448,10 +448,10 @@ $$
 
 i.e., clones will either grow exponentially ($\delta_i>0$) or die exponentially ($\delta_i<0$).
 
-Acceding to them: 
+According to them: 
 
 > In this picture, engrained proliferative heterogeneity is captured by a broad distribution of the $\delta_i$, so that some clones expand faster than others while some clones die
 
 ::: {.callout-note}
-What if proliferative heterogeneity was not a broad distribution but a bimodal distribution (i.e., sensitive and resistant clones)?
+What if proliferative heterogeneity was not a broad distribution but a bimodal distribution (i.e., sensitive and resistant clones or go vs grow clones)?
 :::
