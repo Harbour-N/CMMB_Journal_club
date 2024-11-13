@@ -1,0 +1,347 @@
+---
+title: Stem cell clones
+description: Simulate the stem cell clonal dynamics
+authors:
+  - name: Markus Owen
+format: 
+  html:
+    embed-resources: true
+    code-fold: true
+    number-sections: true
+    toc: true
+    toc-depth: 3
+    date: now
+    date-modified: last-modified
+    date-format: "MMMM DD, YYYY, HH:mm:ss"
+jupyter: python3
+---
+
+# import packages and define functions
+
+```{python}
+#| label: Import_packages
+
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+from numpy.random import default_rng
+import math
+
+```
+
+# Define functions 
+
+```{python}
+def simulate_model0(rng_seed,tmax):
+
+    # model parameters
+    r_s = 0.15 # S division rate per day (omega)
+    r_p = 1 # P division rate per day (lambda)
+
+    # simulation parameters
+    nt = 100000
+
+    ## reset the random number generator and initialise using RNG_SEED
+    rng = default_rng(rng_seed)
+
+    ## initialise the stoichiometric matrix
+    # rows are state variables
+    # columns are reactions
+    nvariables = 2
+    nreactions = 3
+    stoichiometry = np.array([[0,0,0],[1,1,-1]])
+
+    S0 = 1
+    P0 = 0
+
+    ## initialise time, the state variables 
+    # order is O, C
+    # variables stored as a matrix with one column per time point
+    t = np.zeros(nt)
+    variables = np.zeros((nvariables,nt))
+    variables[:,:1]=np.array([[S0],[P0]])
+
+    ## time loop
+    j = 0;
+    while t[j] < tmax and j < nt-1:
+        S = variables[0,j]
+        P = variables[1,j]
+        rates = np.array([r_s*S,0.5*r_p*P,0.5*r_p*P])
+        rtot = rates.sum()
+        t[j+1] = t[j] - math.log(1-rng.uniform())/rtot
+        # uniform random number in [0,rtot)
+        rtot_rand = rtot*rng.uniform()
+        # cumsum gives the cumulative sum, [rates(1) rates(1)+rates(2) ...]
+        r = rates.cumsum()
+        # reaction: first interval end point that rtot_rand is less than
+        reaction = np.searchsorted(r,rtot_rand)
+        # update the state
+        variables[:,j+1] = variables[:,j] + stoichiometry[:,reaction]
+        j = j + 1
+
+    # ignore empty entries in t, O, C
+    t = t[0:j]
+    S = variables[0,0:j];
+    P = variables[1,0:j];
+    final_size = S[-1]+P[-1]
+
+    return t,S,P,final_size
+
+```
+
+
+```{python}
+def simulate_model(rng_seed,tmax):
+
+    # model parameters
+    epsilon = 0.15
+    r_s = 0.15 # S division rate per day
+    r_p = 1 # P division rate per day
+    a_d = 0.5 # Differentiated cell apoptosis rate per day
+
+    # simulation parameters
+    nt = 100000
+
+    ## reset the random number generator and initialise using RNG_SEED
+    rng = default_rng(rng_seed)
+
+    ## initialise the stoichiometric matrix
+    # rows are state variables
+    # columns are reactions
+    nvariables = 3
+    nreactions = 5
+    stoichiometry = np.array([[1,0,0,0,0],[0,1,1,-1,0],[0,0,0,1,-1]])
+
+    S0 = 1
+    P0 = 0
+    D0 = 0
+
+    # plt.figure(figsize = (8, 8))
+
+    ## initialise time, the state variables 
+    # order is O, C
+    # variables stored as a matrix with one column per time point
+    t = np.zeros(nt)
+    variables = np.zeros((nvariables,nt))
+    variables[:,:1]=np.array([[S0],[P0],[D0]])
+
+    ## time loop
+    j = 0;
+    while t[j] < tmax and j < nt-1:
+        S = variables[0,j]
+        P = variables[1,j]
+        D = variables[2,j]
+        rates = np.array([epsilon*r_s*S,(1-epsilon)*r_s*S,0.5*r_p*P,0.5*r_p*P,a_d*D])
+        rtot = rates.sum()
+        t[j+1] = t[j] - math.log(1-rng.uniform())/rtot
+        # uniform random number in [0,rtot)
+        rtot_rand = rtot*rng.uniform()
+        # cumsum gives the cumulative sum, [rates(1) rates(1)+rates(2) ...]
+        r = rates.cumsum()
+        # reaction: first interval end point that rtot_rand is less than
+        reaction = np.searchsorted(r,rtot_rand)
+        # update the state
+        variables[:,j+1] = variables[:,j] + stoichiometry[:,reaction]
+        j = j + 1
+
+    # ignore empty entries in t, O, C
+    t = t[0:j]
+    S = variables[0,0:j];
+    P = variables[1,0:j];
+    D = variables[2,0:j];
+    final_size = S[-1]+P[-1]+D[-1]
+
+    return t,S,P,D,final_size
+
+```
+
+```{python}
+def simulate_model2(rng_seed,tmax,delta):
+
+    # simulation parameters
+    nt = 20000
+    lam = 1
+
+    ## reset the random number generator and initialise using RNG_SEED
+    rng = default_rng(rng_seed)
+
+    ## initialise the stoichiometric matrix
+    # rows are state variables
+    # columns are reactions
+    nvariables = 1
+    nreactions = 2
+    stoichiometry = np.array([[1,-1]])
+
+    S0 = 1
+
+    # plt.figure(figsize = (8, 8))
+
+    ## initialise time, the state variables is just S
+    # variables stored as a matrix with one column per time point
+    t = np.zeros(nt)
+    variables = np.zeros((nvariables,nt))
+    variables[:,:1]=np.array([[S0]])
+
+    ## time loop
+    j = 0;
+    while t[j] < tmax and j < nt-1:
+        S = variables[0,j]
+        rates = np.array([lam*(0.5+delta)*S,lam*(0.5-delta)*S])
+        rtot = rates.sum()
+        t[j+1] = t[j] - math.log(1-rng.uniform())/rtot
+        # uniform random number in [0,rtot)
+        rtot_rand = rtot*rng.uniform()
+        # cumsum gives the cumulative sum, [rates(1) rates(1)+rates(2) ...]
+        r = rates.cumsum()
+        # reaction: first interval end point that rtot_rand is less than
+        reaction = np.searchsorted(r,rtot_rand)
+        # update the state
+        variables[:,j+1] = variables[:,j] + stoichiometry[:,reaction]
+        j = j + 1
+
+    # ignore empty entries in t, O, C
+    t = t[0:j]
+    S = variables[0,0:j];
+    final_size = S[-1]
+
+    return t,S,final_size
+
+```
+
+```{python}
+def size_freq_stats(final_size):
+    size_freq_order = pd.Series(final_size).value_counts(normalize=True)
+    size_freq = pd.Series.sort_index(size_freq_order)
+    size_freq_mean = np.sum(size_freq.index*np.transpose(size_freq.values))
+    mu_n = (size_freq_mean - np.cumsum(size_freq.index*np.transpose(size_freq.values)))/size_freq_mean
+    return size_freq,size_freq_mean,mu_n
+```
+
+# Run different models 
+
+## Set common parameters
+
+```{python}
+nsims = 10000
+tmax = 80
+```
+
+## Initial model: One Stem cell, Progenitors and Differentiated 
+
+```{python}
+
+final_size0 = np.zeros((nsims))
+
+for isim in range(nsims): 
+    t,S,P,final_size0[isim] = simulate_model0(isim,tmax)
+
+```
+
+
+
+## Stem cell / Progenitor / Differentiated model
+```{python}
+
+final_size = np.zeros((nsims))
+
+for isim in range(nsims): 
+    t,S,P,D,final_size[isim] = simulate_model(isim,tmax)
+
+# plt.subplot(311)
+# plt.step(t,S,where='post',label='S(t)')
+# plt.title(f'Clonal dynamics at t={t[-1]}')
+# plt.ylabel('S(t)')
+# # plt.legend()
+# plt.subplot(312)
+# plt.step(t,P,where='post',label='P(t)')
+# plt.ylabel('P(t)')
+# # plt.legend()
+# plt.subplot(313)
+# plt.step(t,D,where='post',label='D(t)')
+# plt.ylabel('D(t)')
+# # plt.legend()
+
+# plt.show()
+
+```
+
+
+## Heterogeneous exponential growth
+
+Illustrative simulations. 
+
+```{python}
+
+plt.figure(figsize = (8, 8))
+
+rng = default_rng(1)
+
+final_size_het = np.zeros((1000))
+
+for isim in range(100): 
+    delta = 0.02+0.0*rng.uniform()
+    t,S,final_size_het[isim] = simulate_model2(isim,tmax,delta)
+    print(isim,delta,t[-1],S[-1])
+    plt.step(t,S,where='post')
+
+plt.title(f'Clonal dynamics at t={t[-1]}')
+plt.ylabel('S(t)')
+# plt.legend()
+plt.show()
+
+```
+
+```{python}
+
+final_size_het = np.zeros((nsims))
+
+for isim in range(nsims): 
+    delta = 0.02+0.0*rng.uniform()
+    t,S,final_size_het[isim] = simulate_model2(isim,tmax,delta)
+
+```
+
+# Analyse final size frequencies
+
+```{python}
+size_freq_spd,size_freq_mean_spd,mu_n_spd=size_freq_stats(final_size)
+
+size_freq_0,size_freq_mean_0,mu_n_0=size_freq_stats(final_size0)
+
+size_freq_het,size_freq_mean_het,mu_n_het=size_freq_stats(final_size_het)
+```
+
+Try plotting with log scale on y-axis: 
+```{python}
+lam = 1
+n0 = lam*tmax/2
+N0 = np.log(n0)
+
+n0_spd = 2*size_freq_mean_spd # no justification for this scaling
+N0_spd = 0.5*np.log(n0_spd) # no justification for this scaling
+
+ss = np.linspace(0.1,500,101)
+
+plt.semilogy(ss,np.exp(-ss/n0)/(N0*ss),label='Negative binomial')
+plt.semilogy(ss,np.exp(-ss/n0_spd)/(N0_spd*ss),label='Negative binom (SPD)?')
+plt.semilogy(size_freq_0,'.',label='Initial model')
+plt.semilogy(size_freq_spd,'.',label='Stem-Progenitor model')
+plt.semilogy(size_freq_het,'.',label='Heterogeneity model')
+plt.xlabel('Final size')
+plt.ylabel('Frequency')
+plt.ylim((0.00009,1.1))
+plt.legend()
+
+```
+
+```{python}
+plt.semilogy(ss,np.exp(-ss/(n0)),label='Negative binomial (initial model)')
+plt.semilogy(ss,np.exp(-ss/n0_spd),label='Negative binom (SPD)?')
+plt.semilogy(mu_n_0,'.',label='Initial model')
+plt.semilogy(mu_n_spd,'.',label='Stem-Progenitor model')
+plt.semilogy(mu_n_het,'.',label='Heterogeneity model')
+plt.xlabel('Final size')
+plt.ylabel('First incomplete moment')
+plt.ylim((0.001,1.1))
+plt.legend()
+```
