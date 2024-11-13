@@ -32,11 +32,7 @@ import math
 # Define functions 
 
 ```{python}
-def simulate_model0(rng_seed,tmax):
-
-    # model parameters
-    r_s = 0.15 # S division rate per day (omega)
-    r_p = 1 # P division rate per day (lambda)
+def simulate_model0(omega,lam,tmax,rng_seed):
 
     # simulation parameters
     nt = 100000
@@ -66,7 +62,7 @@ def simulate_model0(rng_seed,tmax):
     while t[j] < tmax and j < nt-1:
         S = variables[0,j]
         P = variables[1,j]
-        rates = np.array([r_s*S,0.5*r_p*P,0.5*r_p*P])
+        rates = np.array([omega*S,0.5*lam*P,0.5*lam*P])
         rtot = rates.sum()
         t[j+1] = t[j] - math.log(1-rng.uniform())/rtot
         # uniform random number in [0,rtot)
@@ -91,13 +87,7 @@ def simulate_model0(rng_seed,tmax):
 
 
 ```{python}
-def simulate_model(rng_seed,tmax):
-
-    # model parameters
-    epsilon = 0.15
-    r_s = 0.15 # S division rate per day
-    r_p = 1 # P division rate per day
-    a_d = 0.5 # Differentiated cell apoptosis rate per day
+def simulate_model(omega,epsilon,lam,Gamma,tmax,rng_seed):
 
     # simulation parameters
     nt = 100000
@@ -131,7 +121,7 @@ def simulate_model(rng_seed,tmax):
         S = variables[0,j]
         P = variables[1,j]
         D = variables[2,j]
-        rates = np.array([epsilon*r_s*S,(1-epsilon)*r_s*S,0.5*r_p*P,0.5*r_p*P,a_d*D])
+        rates = np.array([epsilon*omega*S,(1-epsilon)*omega*S,0.5*lam*P,0.5*lam*P,Gamma*D])
         rtot = rates.sum()
         t[j+1] = t[j] - math.log(1-rng.uniform())/rtot
         # uniform random number in [0,rtot)
@@ -156,11 +146,10 @@ def simulate_model(rng_seed,tmax):
 ```
 
 ```{python}
-def simulate_model2(rng_seed,tmax,delta):
+def simulate_model2(lam,delta,tmax,rng_seed):
 
     # simulation parameters
     nt = 20000
-    lam = 1
 
     ## reset the random number generator and initialise using RNG_SEED
     rng = default_rng(rng_seed)
@@ -228,24 +217,67 @@ tmax = 80
 
 ## Initial model: One Stem cell, Progenitors and Differentiated 
 
+Illustrative simulations. 
+
 ```{python}
 
+final_size0 = np.zeros((100))
+# model parameters
+omega = 0.15 # S division rate per day
+lam = 1 # P division rate per day
+tmax = 80
+
+for isim in range(100): 
+    t,S,P,final_size0[isim] = simulate_model0(omega,lam,tmax,isim)
+    plt.step(t,S+P,where='post')
+
+plt.title('Initial model: Clonal dynamics')
+tt = np.linspace(0,tmax,201)
+plt.plot(tt,1+omega*tt)
+plt.ylabel('S(t)+P(t)')
+plt.title(f'Illustrative solutions: Initial model')
+# plt.legend()
+plt.show()
+```
+
+```{python}
 final_size0 = np.zeros((nsims))
 
 for isim in range(nsims): 
-    t,S,P,final_size0[isim] = simulate_model0(isim,tmax)
+    t,S,P,final_size0[isim] = simulate_model0(omega,lam,tmax,isim)
 
 ```
 
 
 
 ## Stem cell / Progenitor / Differentiated model
+
+Illustrative solutions. 
+
 ```{python}
 
+# model parameters
+epsilon = 0.15
+omega = 0.15 # S division rate per day
+lam = 1 # P division rate per day
+Gamma = 0.5 # Differentiated cell apoptosis rate per day
+
+for isim in range(100): 
+    t,S,P,D,_ = simulate_model(omega,epsilon,lam,Gamma,tmax,isim)
+    plt.plot(t,S+P+D)
+
+plt.xlabel('t [days]')
+plt.ylabel('S(t)+P(t)+D(t)')
+plt.title('Illustrative solutions of S-P-D model')
+plt.show()
+
+```
+
+```{python}
 final_size = np.zeros((nsims))
 
 for isim in range(nsims): 
-    t,S,P,D,final_size[isim] = simulate_model(isim,tmax)
+    t,S,P,D,final_size[isim] = simulate_model(omega,epsilon,lam,Gamma,tmax,isim)
 
 # plt.subplot(311)
 # plt.step(t,S,where='post',label='S(t)')
@@ -272,6 +304,8 @@ Illustrative simulations.
 
 ```{python}
 
+lam = 1
+
 plt.figure(figsize = (8, 8))
 
 rng = default_rng(1)
@@ -280,11 +314,11 @@ final_size_het = np.zeros((1000))
 
 for isim in range(100): 
     delta = 0.02+0.0*rng.uniform()
-    t,S,final_size_het[isim] = simulate_model2(isim,tmax,delta)
+    t,S,final_size_het[isim] = simulate_model2(lam,delta,tmax,isim)
     print(isim,delta,t[-1],S[-1])
     plt.step(t,S,where='post')
 
-plt.title(f'Clonal dynamics at t={t[-1]}')
+plt.title(f'Illustrative solutions: Heterogeneous exponential growth')
 plt.ylabel('S(t)')
 # plt.legend()
 plt.show()
@@ -297,7 +331,7 @@ final_size_het = np.zeros((nsims))
 
 for isim in range(nsims): 
     delta = 0.02+0.0*rng.uniform()
-    t,S,final_size_het[isim] = simulate_model2(isim,tmax,delta)
+    t,S,final_size_het[isim] = simulate_model2(lam,delta,tmax,isim)
 
 ```
 
