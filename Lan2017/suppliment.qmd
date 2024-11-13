@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 import scipy.stats as stats
 import scipy.special as special
 from scipy.interpolate import interp1d
-from numpy.random import default_rng
+import pandas as pd
 from numba import jit
 ```
 
@@ -264,6 +264,14 @@ $$
 
 where $n_0(t) = \lambda t / 2$ (a dimensionless parameter) and $\zeta = 2 \omega / \lambda$ is the ratio immigartion rate and progenitor loss and replacement rate. And $\Gamma(x) = \int_0^\infty u^{x-1}e^{-u} $ is the Gamma function
 
+For small immigration rates $\omega$, the barcode frequency distribution of cells with at least 1 progenitor cell, given by $P_*(n,t) = P(n,t) / (1 - P(0,t))$ has the form
+
+$$
+    P_*(n,t) \approx \frac{1}{N_0(t)} \frac{e^{-n/n_0(t)}}{n} + O(\omega)
+$$
+
+Where $N_0(t) = ln(n_0(t))$. This is a good aproximation for small immigration rates $\omega$
+
 Do this for multiple stopping times and compare to analytical solution / negative binomial distriubtion!
 
 ```{python}
@@ -284,7 +292,7 @@ for i in range(0,num_sims):
     s,p,t =  gillespie(t_start,t_stop,omega, lam, init_population, state_changes)
     N = s+p
     final_colony_size[i] = N[-1]
-    print(i)
+
     if i%100 == 0 :
         plt.plot(t,N)
 
@@ -295,7 +303,7 @@ plt.figure()
 plt.hist(final_colony_size, density=True, bins=100)
 plt.xlabel(f"colony size n")
 plt.ylabel("Count / density")
-plt.title(f"Disitribution of colony sizes at t = {final_time}, number of samples = {num_sims}")
+plt.title(f"Disitribution of colony sizes at t = {t_stop}, number of samples = {num_sims}")
 
 
 # analytical solution comparison
@@ -312,8 +320,8 @@ def neg_binomial(n,t,omega,lam):
 n = np.linspace(0,200,101)
 #plt.plot(n, analytical_sol(n,final_time,omega,lam))
 #plt.plot(n,neg_binomial(n,final_time,omega,lam))
-plt.semilogy(n,neg_binomial(n,final_time,omega,lam), 'r--')
-plt.semilogy(n,analytical_sol(n,final_time,omega,lam), 'g--')
+plt.semilogy(n,neg_binomial(n,t_stop,omega,lam), 'r--')
+plt.semilogy(n,analytical_sol(n,t_stop,omega,lam), 'g--')
 
 plt.legend(["Neg binomial approx sol", "Full solution", "Samples"])
 
@@ -327,7 +335,7 @@ plt.show()
 size_freq,size_freq_mean,mu_n=size_freq_stats(final_colony_size)
 
 plt.semilogy(size_freq,'.',label='Initial model')
-plt.semilogy(n,neg_binomial(n,final_time,omega,lam))
+plt.semilogy(n,neg_binomial(n,t_stop,omega,lam))
 plt.xlabel("Final colony size")
 plt.ylabel("Density")
 plt.title("Asymmetric division only model")
@@ -349,18 +357,22 @@ where $ <n(t)> = 1 + \sum_n nP(n,t)$ is the average barcode frequency with the f
 ```{python}
 
 # set params for simulation
-t_stop = 100
+t_stop = 80
 t_start = 0
 omega = 0.15
 lam = 1
 
 # number of sims equivalent to number of starting cells infected with virus barcoding
-num_sims = 10000
+num_sims = 5000
 final_colony_size = np.zeros(num_sims)
 
 # Store time points and colony sizes for all simulations
 all_time_points = []
 all_colony_sizes = []
+
+# Define a common time grid for interpolation
+common_time_points = np.linspace(t_start, t_stop, num=100)  # 100 points between t_start and t_stop
+interpolated_colony_sizes = np.zeros((num_sims, len(common_time_points)))
 
 plt.figure()
 
@@ -372,30 +384,28 @@ for i in range(0,num_sims):
     # Store time points and colony sizes for interpolation
     all_time_points.append(t)
     all_colony_sizes.append(N)
-    print(i)
-    #if i%100 == 0 :
-    #    plt.plot(t,N)
+
+    # Interpolate the colony sizes to the common time points
+    if len(t) > 1:  # Ensure there are enough points to interpolate
+        interp_func = interp1d(t, N, bounds_error=False, fill_value="extrapolate")
+        #interpolated_colony_sizes[i, :] = interp_func(common_time_points)
+        interpolated_values= interp_func(common_time_points)
+        
+        interpolated_colony_sizes[i, :] = np.maximum(interpolated_values, 0)
+    
+    if i%100 == 0 :
+        plt.plot(t,N, color = 'grey', alpha = 0.3)
 
 
 
 # analytical mean is given by
 dt = 0.1
-t = np.arange(0, final_time,dt)
+t = np.arange(0, t_stop,dt)
 analytical_mean = 1 + omega*t
 
-# Convert lists to arrays for easier manipulation
-all_time_points = np.concatenate(all_time_points)
-all_colony_sizes = np.concatenate(all_colony_sizes)
+interp_mean = np.mean(interpolated_colony_sizes, axis=0)
 
-# Interpolate the colony sizes
-interp_func = interp1d(all_time_points, all_colony_sizes, kind='linear', fill_value='extrapolate')
-
-# Create a new time array for interpolation
-t_interp = np.arange(0, final_time, 1)
-
-# Calculate the interpolated colony sizes
-interpolated_colony_sizes = interp_func(t_interp)
-plt.plot(t_interp, interpolated_colony_sizes, label='Interpolated Mean', color='blue')
+plt.plot(common_time_points[0:-2], interp_mean[0:-2], label='Interpolated Mean', color='blue')
 
 plt.plot(t, analytical_mean, 'r--')
 
