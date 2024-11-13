@@ -20,6 +20,10 @@ jupyter: python3
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.stats as stats
+import scipy.special as special
+from scipy.interpolate import interp1d
+from numpy.random import default_rng
+from numba import jit
 ```
 
 
@@ -136,25 +140,75 @@ Consider only a single passage
 
 ```{python}
 
-def gillespie(t_start,t_stop,omega, lam, population, state_changes,l,logl,time_points):
-    t=t_start
-    while t<t_stop:
-        s,p=population 
+@jit
+def gillespie(t_start,t_stop,omega, lam, init_population, state_changes):
+    '''
+    A simple gillespie algrotithm
 
-        prob=np.array([omega*s, 0.5*lam*p, 0.5*lam*p]) #probability of each transition happening
+    Inputs:
+        t_start = float, start time (usually always 0)
+        t_stop = final time 
+        omega = asymeetric division rate.
+        lam = symmetric division / death rate of progenitor cells
+        init_population = inital population size.
+        state_changes = How the possible types of cell division effect the state of the model
 
-        del_t=np.random.exponential(1/(np.sum(prob))) #choosing a time change from an exponential distribution
+    Outputs:
+        s = list of number of stem cells at each time point
+        p = list of number of progenitor cells at each time point
+        t = list of time pionts
+    '''
 
-        state=stats.rv_discrete(values=([0,1,2],[prob[0]/np.sum(prob), prob[1]/np.sum(prob), prob[2]/np.sum(prob)])).rvs() #choosing a state change from a discrete distribution 
-        t=t+del_t #updating the time
-        population=population+state_changes[state] #updating the population
-        l.append(p+1)
-        logl.append(np.log(p+1))
-        time_points.append(t)
-    return population, l,logl, time_points
+    #np.random.seed(42)
 
-final_time = 500
-start_time = 0
+    nt = 100000
+    # initialise a list to store the time 
+    t = np.zeros(nt)
+
+    # set initial condition
+    s = np.zeros(nt)
+    p = np.zeros(nt)
+    s[0] = init_population[0]
+    p[0] = init_population[1]
+
+    i = 0
+    while t[i] < t_stop and i < nt-1:
+
+        #probability of each transition happening - (asymmetric division of GSC, symmetric division of progenitor or death of progenitor)
+        prob = np.array([omega*s[i], 0.5*lam*p[i], 0.5*lam*p[i]])
+        sum_prob = np.sum(prob)
+
+        #choosing a time change from an exponential distribution 
+        dt = np.random.exponential(1/sum_prob)
+        t[i+1] = t[i] + dt 
+
+        # uniform random number in [0,)
+        rtot_rand = sum_prob*np.random.uniform(0, 1)
+        # cumsum gives the cumulative sum, [rates(1) rates(1)+rates(2) ...]
+        r = prob.cumsum()
+        # reaction: first interval end point that rtot_rand is less than
+        reaction = np.searchsorted(r,rtot_rand)
+
+
+        # update the populations
+        s[i+1] = s[i] + state_changes[reaction][0] # in asymetric division only model this should never change
+        p[i+1] = p[i] + state_changes[reaction][1]
+
+        i = i + 1
+
+    #ignore empty entries
+    t = t[0:i]
+    s = s[0:i]
+    p = p[0:i]
+
+    return s,p,t
+
+
+### Illustrative model simulation
+
+# initialise parameters for simulation
+t_stop = 500
+t_start = 0
 init_population=np.array([1,0]) #inital condition (start with a single GSC (s) cell)
 #the effect each transition has on the states:
 state_changes= np.array([
@@ -162,30 +216,43 @@ state_changes= np.array([
         [0,1], #The progenitor cells divides symmetrically
         [0,-1], #The progenitor cell dies
     ])
-l=[]
-logl=[]
-time_points=[]
 
 num_sims = 4
+
+omega = 0.15
+lam = 1
 
 plt.figure()
 
 for i in range(num_sims):
-    population,l,logl,time_points=gillespie(t_start=start_time,t_stop=final_time,omega=0.07,lam=0.7,population=init_population, state_changes=state_changes, l=l,logl=logl, time_points=time_points)
-    plt.plot(time_points,l)
-    l = []
-    time_points = []
-    logl = []
+    s,p,t =  gillespie(t_start,t_stop,omega, lam, init_population, state_changes)
+    N = s+p
+    plt.plot(t,N)
 
 
 plt.ylabel('Clone Size')
 plt.xlabel('Time')
-plt.title('Model simulations on a logarithmic scale')
+plt.title('Model simulations')
 plt.show()
-plt.clf()
+
 
 
 ```
+
+
+```{python}
+
+# Funtion to calcualate useful statistics of the distibutions of final sizes
+def size_freq_stats(final_size):
+    size_freq_order = pd.Series(final_size).value_counts(normalize=True)
+    size_freq = pd.Series.sort_index(size_freq_order)
+    size_freq_mean = np.sum(size_freq.index*np.transpose(size_freq.values))
+    mu_n = (size_freq_mean - np.cumsum(size_freq.index*np.transpose(size_freq.values)))/size_freq_mean
+    return size_freq,size_freq_mean,mu_n
+
+```
+
+## Emeragance of negative binomial distriubtion
 
 I believe that the final colony size should follow a negative binomial disitibution
 
@@ -201,25 +268,140 @@ Do this for multiple stopping times and compare to analytical solution / negativ
 
 ```{python}
 
+# set params for simulation
+t_stop = 80
+t_start = 0
+omega = 0.15
+lam = 1
+
 # number of sims equivalent to number of starting cells infected with virus barcoding
-num_sims = 1000
+num_sims = 10000
 final_colony_size = np.zeros(num_sims)
 
 plt.figure()
 
-for i in range(0,num_sims,100):
-    population,l,logl,time_points=gillespie(t_start=start_time,t_stop=final_time,omega=0.07,lam=0.7,population=init_population, state_changes=state_changes, l=l,logl=logl, time_points=time_points)
-    plt.plot(time_points,l)
-    final_colony_size[i] = l[-1]
-    l = []
-    time_points = []
-    logl = []
+for i in range(0,num_sims):
+    s,p,t =  gillespie(t_start,t_stop,omega, lam, init_population, state_changes)
+    N = s+p
+    final_colony_size[i] = N[-1]
+    print(i)
+    if i%100 == 0 :
+        plt.plot(t,N)
 
 
 plt.show()
 
-plt.hist(final_colony_size)
+plt.figure()
+plt.hist(final_colony_size, density=True, bins=100)
+plt.xlabel(f"colony size n")
+plt.ylabel("Count / density")
+plt.title(f"Disitribution of colony sizes at t = {final_time}, number of samples = {num_sims}")
+
+
+# analytical solution comparison
+def analytical_sol(n,t, omega, lam):
+    zeta = 2.0*omega/lam
+    n0 = lam*t/2.0
+    return ( 1.0 / special.factorial(n) ) * (special.gamma(zeta+n) / special.gamma(zeta)) * ( (n0 / (1 + n0) )**n ) *( ( 1 - (n0 / (1 + n0) ) )**zeta )
+
+def neg_binomial(n,t,omega,lam):
+    n0 = lam*t/2.0
+    N0 = np.log(n0)
+    return 1 / N0 * ( np.exp(-n/n0) / n)
+
+n = np.linspace(0,200,101)
+#plt.plot(n, analytical_sol(n,final_time,omega,lam))
+#plt.plot(n,neg_binomial(n,final_time,omega,lam))
+plt.semilogy(n,neg_binomial(n,final_time,omega,lam), 'r--')
+plt.semilogy(n,analytical_sol(n,final_time,omega,lam), 'g--')
+
+plt.legend(["Neg binomial approx sol", "Full solution", "Samples"])
 
 plt.show()
+
+```
+
+
+```{python}
+
+size_freq,size_freq_mean,mu_n=size_freq_stats(final_colony_size)
+
+plt.semilogy(size_freq,'.',label='Initial model')
+plt.semilogy(n,neg_binomial(n,final_time,omega,lam))
+plt.xlabel("Final colony size")
+plt.ylabel("Density")
+plt.title("Asymmetric division only model")
+
+```
+
+
+## Average bar code frequency
+
+On average the barcoding frequencies grow linearly in time according to
+
+$$
+    <n(t)> = 1 + \omega t
+$$
+
+where $ <n(t)> = 1 + \sum_n nP(n,t)$ is the average barcode frequency with the first term accounting for the stem cell.
+
+
+```{python}
+
+# set params for simulation
+t_stop = 100
+t_start = 0
+omega = 0.15
+lam = 1
+
+# number of sims equivalent to number of starting cells infected with virus barcoding
+num_sims = 10000
+final_colony_size = np.zeros(num_sims)
+
+# Store time points and colony sizes for all simulations
+all_time_points = []
+all_colony_sizes = []
+
+plt.figure()
+
+for i in range(0,num_sims):
+    s,p,t =  gillespie(t_start,t_stop,omega, lam, init_population, state_changes)
+    N = s+p
+    final_colony_size[i] = N[-1]
+
+    # Store time points and colony sizes for interpolation
+    all_time_points.append(t)
+    all_colony_sizes.append(N)
+    print(i)
+    #if i%100 == 0 :
+    #    plt.plot(t,N)
+
+
+
+# analytical mean is given by
+dt = 0.1
+t = np.arange(0, final_time,dt)
+analytical_mean = 1 + omega*t
+
+# Convert lists to arrays for easier manipulation
+all_time_points = np.concatenate(all_time_points)
+all_colony_sizes = np.concatenate(all_colony_sizes)
+
+# Interpolate the colony sizes
+interp_func = interp1d(all_time_points, all_colony_sizes, kind='linear', fill_value='extrapolate')
+
+# Create a new time array for interpolation
+t_interp = np.arange(0, final_time, 1)
+
+# Calculate the interpolated colony sizes
+interpolated_colony_sizes = interp_func(t_interp)
+plt.plot(t_interp, interpolated_colony_sizes, label='Interpolated Mean', color='blue')
+
+plt.plot(t, analytical_mean, 'r--')
+
+# Add labels to the plot
+plt.xlabel("Time")
+plt.ylabel("Colony size (n)")
+plt.title("Comparison of analytical and calualted mean")
 
 ```
