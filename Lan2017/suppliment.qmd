@@ -300,7 +300,7 @@ for i in range(0,num_sims):
 plt.show()
 
 plt.figure()
-plt.hist(final_colony_size, density=True, bins=100)
+plt.hist(final_colony_size, density=True, bins=100, alpha = 0.5)
 plt.xlabel(f"colony size n")
 plt.ylabel("Count / density")
 plt.title(f"Disitribution of colony sizes at t = {t_stop}, number of samples = {num_sims}")
@@ -340,6 +340,8 @@ plt.xlabel("Final colony size")
 plt.ylabel("Density")
 plt.title("Asymmetric division only model")
 
+plt.show()
+
 ```
 
 
@@ -374,6 +376,8 @@ all_colony_sizes = []
 common_time_points = np.linspace(t_start, t_stop, num=100)  # 100 points between t_start and t_stop
 interpolated_colony_sizes = np.zeros((num_sims, len(common_time_points)))
 
+first = 1
+
 plt.figure()
 
 for i in range(0,num_sims):
@@ -394,7 +398,13 @@ for i in range(0,num_sims):
         interpolated_colony_sizes[i, :] = np.maximum(interpolated_values, 0)
     
     if i%100 == 0 :
-        plt.plot(t,N, color = 'grey', alpha = 0.3)
+        if first == 1:
+            plt.plot(t,N, color = 'grey', alpha = 0.3, label = "Example sims")
+            first = -100
+        else:
+            plt.plot(t,N, color = 'grey', alpha = 0.3, label = None)
+
+
 
 
 
@@ -405,13 +415,43 @@ analytical_mean = 1 + omega*t
 
 interp_mean = np.mean(interpolated_colony_sizes, axis=0)
 
-plt.plot(common_time_points[0:-2], interp_mean[0:-2], label='Interpolated Mean', color='blue')
+plt.plot(common_time_points[0:-2], interp_mean[0:-2], color='blue', label = "Calculated mean")
 
-plt.plot(t, analytical_mean, 'r--')
+plt.plot(t, analytical_mean, 'r--', label = "Analytical mean")
 
 # Add labels to the plot
 plt.xlabel("Time")
 plt.ylabel("Colony size (n)")
 plt.title("Comparison of analytical and calualted mean")
+plt.legend()
+
+plt.show()
 
 ```
+
+
+# Proliferative heterogeneity model
+
+An alternative explanation for how different colony sizes could arise is due to intrinsic heterogeneity in the GSC population for example in proliferation or death rate on which natural selection acts to produce colonies of different (final) sizes. This can give rise to a range of colony sizes without the need for a proliferative hierarchy.
+
+Let us consider a large population of clones in which the cell of each clone i undergoes loss and replacement with clone-specific probabilities. According to the schematic below
+
+![Model schematic with single cell type but intrinsic (proliferative) heterogeneity](images/het_model.jpeg)
+
+The parameter $\delta_i$ determines whether the cell i is primed for proliferation ($\delta_i > 0$) or loss ($\delta_i < 0$).
+
+The average size of a clone derived from cell i evolves according to exponential growth / death: 
+
+$$
+    <n_i(t)> = e^{2 \delta_i \lambda t}
+$$
+
+i.e., clones will either grow exponentially ($\delta_i>0$) or die exponentially ($\delta_i<0$).
+
+Acceding to them: 
+
+> In this picture, engrained proliferative heterogeneity is captured by a broad distribution of the $\delta_i$, so that some clones expand faster than others while some clones die
+
+::: {.callout-note}
+What if proliferative heterogeneity was not a broad distribution but a bimodal distribution (i.e., sensitive and resistant clones)?
+:::
