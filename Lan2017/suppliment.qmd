@@ -455,3 +455,128 @@ According to them:
 ::: {.callout-note}
 What if proliferative heterogeneity was not a broad distribution but a bimodal distribution (i.e., sensitive and resistant clones or go vs grow clones)?
 :::
+
+FOr a clone with a given $\delta_i$ the resulting survivng clone size distiribution at large times is exponential
+
+$$
+    p(n|\alpha_i) \approxeq \alpha_i e^{-\alpha_i n}
+$$
+
+Where the exponent $\alpha_i$ depends on the proliferative potential and on time.
+
+A distirbution in engranied proliferative advantages $\delta_i$ entials a distirbution in the shape parameter $\alpha_i$ of the clone size probabilitie for the different clones.
+
+As an example consider the distirbution of $\alpha_i$ at a fixed time $t=t_0$. For simplicity we consider a Gamma distirbution for $\alpha$ which ensures $\alpha > 0$
+
+$$
+    \bar{p}(\alpha) = \frac{\alpha^{m-1} e^{m \alpha / \alpha_0}}{(\alpha_0 / m)^m \Gamma(m)}
+$$
+
+The clone size distribution resulting from this distiribution is given by
+
+$$
+    p(n) = \int_0^\infty p(n|\alpha)\bar{p} d\alpha = \frac{\alpha_0}{(\alpha_0 n /m + 1)^{m+1}}
+$$
+
+Which asymptotically has the power law behaviour $n^{-m+1}$ and is therefore distinct from the negative binomial form $e^{-n/n_0 / n}$
+
+
+```{python}
+
+# new function to simulate this model
+@jit
+def gillespie_het_model(t_start,t_stop,delta_i, lam, init_population, state_changes):
+    '''
+    A simple gillespie algrotithm
+
+    Inputs:
+        t_start = float, start time (usually always 0)
+        t_stop = final time 
+        delta_i = intrinsic proliferative heterogeniety between clones
+        lam = symmetric division / death rate of progenitor cells
+        init_population = inital population size.
+        state_changes = How the possible types of cell division effect the state of the model
+
+    Outputs:
+        s = list of number of stem cells at each time point
+        p = list of number of progenitor cells at each time point
+        t = list of time pionts
+    '''
+
+    #np.random.seed(42)
+
+    nt = 100000
+    # initialise a list to store the time 
+    t = np.zeros(nt)
+
+    # set initial condition
+    p = np.zeros(nt)
+    p[0] = init_population
+
+    i = 0
+    while t[i] < t_stop and i < nt-1:
+
+        #probability of each transition happening - (asymmetric division of GSC, symmetric division of progenitor or death of progenitor)
+        prob = np.array([lam*(delta_i+0.5)*p[i], lam*(delta_i-0.5)*p[i]])
+        sum_prob = np.sum(prob)
+
+        #choosing a time change from an exponential distribution 
+        dt = np.random.exponential(1/sum_prob)
+        t[i+1] = t[i] + dt 
+
+        # uniform random number in [0,)
+        rtot_rand = sum_prob*np.random.uniform(0, 1)
+        # cumsum gives the cumulative sum, [rates(1) rates(1)+rates(2) ...]
+        r = prob.cumsum()
+        # reaction: first interval end point that rtot_rand is less than
+        reaction = np.searchsorted(r,rtot_rand)
+
+
+        # update the populations
+        p[i+1] = p[i] + state_changes[reaction][1]
+
+        i = i + 1
+
+    #ignore empty entries
+    t = t[0:i]
+    p = p[0:i]
+
+    return p,t
+
+
+# set model params
+lam = 1
+nsims = 100
+init_population = 1
+t_start = 0
+t_stop = 5
+
+state_changes= np.array([
+        [0,1], #The stem cell divides asymmetrically
+        [0,-1], #The progenitor cell dies
+    ])
+
+plt.figure()
+
+# Parameters for the gamma distribution
+shape = 0.2  # shape parameter (k)
+scale = 0.1  # scale parameter (theta)
+
+for i in range(nsims):
+    delta_i = np.random.gamma(shape, scale)
+    p,t = gillespie_het_model(t_start,t_stop,delta_i, lam, init_population, state_changes)  
+    plt.plot(t,p) 
+
+plt.xlabel("Time")
+plt.ylabel("Clone size")
+plt.title("Example simulations \n Engrained proliferative heterogeniety")
+
+plt.show()
+```
+
+
+::: {.callout-note}
+These can blow up very quicly due to the rapid exponential growth that can occur when $delta_i$ is large!
+:::
+
+
