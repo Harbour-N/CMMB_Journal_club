@@ -1,0 +1,20 @@
+---
+title: Gene set enrichment analysis
+description: Go over GSEA with examples
+authors:
+  - name: Nicholas Harbour
+format: 
+  html:
+    embed-resources: true
+    code-fold: true
+    number-sections: true
+    toc: true
+    toc-depth: 3
+    date: now
+    date-modified: last-modified
+    date-format: "MMMM DD, YYYY, HH:mm:ss"
+jupyter: python3
+---
+
+
+Based on this paper [Spatially resolved transcriptomic profiles reveal unique defining molecular features of infiltrative 5ALA-metabolizing cells associated with glioblastoma recurrence](https://genomemedicine.biomedcentral.com/articles/10.1186/s13073-023-01207-1#availability-of-data-and-materials)
