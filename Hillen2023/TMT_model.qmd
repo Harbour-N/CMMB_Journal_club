@@ -1,0 +1,32 @@
+---
+title: Tumour microtuble model
+description: go over TMT model for GBM growth
+authors:
+  - name: Nicholas Harbour
+format: 
+  html:
+    embed-resources: true
+    code-fold: true
+    number-sections: true
+    toc: true
+    toc-depth: 3
+    date-modified: last-modified
+    date-format: "MMMM DD, YYYY, HH:mm:ss"
+jupyter: python3
+---
+
+
+
+This is the paper we will go over: [Modelling microtube driven invasion of glioma](https://doi.org/10.1007/s00285-023-02025-0)
+
+# Full model
+The model tracks 5 variables:
+- $P(t,x,v)$ = TMT tips
+- $M(t,x,v)$ = Mature TMT formed as the tip extends (the 'snail trial')
+- $N(t,x,v)$ = Migrating nuclei.
+- $B(t,x)$ = Bulk tumour mass
+- $R(t,x)$ = Pre-bulk state, during which nuclei have stopped migrating and mature into bulk.
+
+Each of $P(t,x,v), M(t,x,v)$ and $N(t,x,v)$ depend on time ($t\geq0$), position $x \in \omega$ where $\omega = \Re^n $ and orientation $v \in V = S^{n-1}$ with $S^{n-1}$ being the unit sphere. $B(t,x)$ and $R(t,x)$ vary only on time and position. 
+
+The model equations are given by

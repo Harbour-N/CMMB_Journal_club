@@ -1,0 +1,36 @@
+---
+title: GSEA using 5ALA+ gene signature
+description: example of GSEA with 5ALA+ gene signature
+authors:
+  - name: Nicholas Harbour
+format: 
+  html:
+    embed-resources: true
+    code-fold: true
+    number-sections: true
+    toc: true
+    toc-depth: 3
+    date: now
+    date-modified: last-modified
+    date-format: "MMMM DD, YYYY, HH:mm:ss"
+engine: knitr
+---
+
+
+
+Based on this paper [Spatially resolved transcriptomic profiles reveal unique defining molecular features of infiltrative 5ALA-metabolizing cells associated with glioblastoma recurrence](https://genomemedicine.biomedcentral.com/articles/10.1186/s13073-023-01207-1) we get a list of genes for the 5ALA+ signature
+
+
+# Load in 5ALA+ gene signature
+
+```{R}
+
+library(dplyr)
+
+# load in the 5ALA+ gene signature
+gene_5ALA <- read.csv("ALA pos gene list_final.csv")
+
+head(gene_5ALA)
+```
+
+
