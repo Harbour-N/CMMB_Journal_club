@@ -21,12 +21,161 @@ This is the paper we will go over: [Modelling microtube driven invasion of gliom
 
 # Full model
 The model tracks 5 variables:
+
 - $P(t,x,v)$ = TMT tips
 - $M(t,x,v)$ = Mature TMT formed as the tip extends (the 'snail trial')
 - $N(t,x,v)$ = Migrating nuclei.
 - $B(t,x)$ = Bulk tumour mass
 - $R(t,x)$ = Pre-bulk state, during which nuclei have stopped migrating and mature into bulk.
 
-Each of $P(t,x,v), M(t,x,v)$ and $N(t,x,v)$ depend on time ($t\geq0$), position $x \in \omega$ where $\omega = \Re^n $ and orientation $v \in V = S^{n-1}$ with $S^{n-1}$ being the unit sphere. $B(t,x)$ and $R(t,x)$ vary only on time and position. 
+Each of $P(t,x,v), M(t,x,v)$ and $N(t,x,v)$ depend on time ($t\geq0$), position $x \in \Omega$ where $\Omega \subset \mathbb{R}^n$ and orientation $v \in V = S^{n-1}$ with $S^{n-1}$ being the unit sphere. $B(t,x)$ and $R(t,x)$ vary only on time and position. 
 
 The model equations are given by
+
+
+
+
+# kinetic part only
+
+If we do not consider the spatial aspect we get a reduced system of ODEs
+
+
+## Steady states
+
+There are 2 steady states:
+
+The diseas free-equilibiria
+
+$$
+    E_1 = \{ (0,M_1,0,0,0), M_1 > 0 \}
+$$
+
+and the disease equailibria
+
+$$
+    E_2 = \{ (0,M_1,k,0,0), M_1 > 0 \}
+$$
+
+
+## Linearise
+
+To linearise the system we calculate the Jacobian for that we need the following partial derivatives
+
+For the TMT Tips
+$$
+    \frac{\partial P_t}{\partial P} = -\alpha - \delta B, \quad
+    \frac{\partial P_t}{\partial M} = 0, \quad
+    \frac{\partial P_t}{\partial B} = - \delta P + \beta - \frac{2 \beta B}{k}, \quad
+    \frac{\partial P_t}{\partial N} = 0, \quad
+    \frac{\partial P_t}{\partial R} = 0
+$$
+
+For TMT 'snail trials'
+$$
+    \frac{\partial M_t}{\partial P} = s_p, \quad
+    \frac{\partial M_t}{\partial M} = -\tilde{k_1}N, \quad
+    \frac{\partial M_t}{\partial B} = 0, \quad
+    \frac{\partial M_t}{\partial N} = -\tilde{k_1}M, \quad
+    \frac{\partial M_t}{\partial R} = 0,
+$$
+
+
+For Bulk tumor
+$$
+    \frac{\partial B_t}{\partial P} = 0, \quad
+    \frac{\partial B_t}{\partial M} = 0, \quad
+    \frac{\partial B_t}{\partial B} = \rho -\frac{2 \rho B}{k} - \frac{\gamma R}{k}, \quad
+    \frac{\partial B_t}{\partial N} = 0, \quad
+    \frac{\partial B_t}{\partial R} = \gamma - \frac{\gamma B}{k}
+$$
+
+Migrating Nuclei
+$$
+    \frac{\partial N_t}{\partial P} = 0, \quad
+    \frac{\partial N_t}{\partial M} = \eta B - \frac{\eta B^2}{k} - \tilde{k_2}N - \frac{d}{dM}\tilde{k_3}(M) N, \quad
+    \frac{\partial N_t}{\partial B} = \eta M - \frac{2 B M \eta}{k}, \quad
+    \frac{\partial N_t}{\partial N} = - \tilde{k_2}M - \tilde{K_3}(M), \quad
+    \frac{\partial N_t}{\partial R} = 0
+$$
+
+Pre-bulk
+$$
+    \frac{\partial R_t}{\partial P} = 0, \quad
+    \frac{\partial R_t}{\partial M} = \tilde{k_2}N, \quad
+    \frac{\partial R_t}{\partial B} = 0, \quad
+    \frac{\partial R_t}{\partial N} =  \tilde{k_2}M, \quad
+    \frac{\partial R_t}{\partial R} = - \gamma
+$$
+
+This gives us the jacobian
+
+
+$$
+J = 
+    \begin{pmatrix}
+    -\alpha - \delta B & 0 & - \delta P + \beta - \frac{2 \beta B}{k} & 0 & 0 \\
+    s_p & -\tilde{k_1}N & 0 & -\tilde{k_1}M & 0 \\
+    0 & 0 & \rho -\frac{2 \rho B}{k} - \frac{\gamma R}{k} & 0 & \gamma - \frac{\gamma B}{k} \\
+    0 & \eta B - \frac{\eta B^2}{k} - \tilde{k_2}N - \frac{d}{dM}\tilde{k_3}(M) N & \eta M - \frac{2 B M \eta}{k} & - \tilde{k_2}M - \tilde{k_3}(M) & 0 \\
+    0 & \tilde{k_2}N & 0 &  \tilde{k_2}M & - \gamma \\
+    \end{pmatrix}
+$$
+
+### Jacobian at non-disease steady state
+$$
+J(0,M_1,0,0,0) = 
+    \begin{pmatrix}
+    -\alpha & 0 &  \beta & 0 & 0 \\
+    s_p & 0 & 0 & -\tilde{k_1}M_1 & 0 \\
+    0 & 0 & \rho & 0 & \gamma \\
+    0 & 0 & \eta M_1  & - \tilde{k_2}M_1 - \tilde{k_3}(M_1) & 0 \\
+    0 & 0 & 0 &  \tilde{k_2}M_1 & - \gamma \\
+    \end{pmatrix}
+$$
+
+
+In the case when $M_1 = 0$ we have the following eigenvalues
+
+```{python}
+
+from sympy import *
+
+alpha, beta, delta, k1, k2, k, M, B, P, R,N, sp, rho, k3, eta, k3M, dk3M, gamma, lam = symbols('alpha beta delta, k_1 k_2 k M B P R N s_p rho k_3, eta, k_3M, dk3M, gamma lambda')
+J = Matrix([[-alpha - delta*B, 0, -delta *P + beta - 2*beta*B / k, 0, 0], [sp, -k1*N,0, -k1*M, 0], [0, 0, rho - 2*rho*B/k - gamma*R/k, 0, gamma - gamma*B / k], [0, eta*B - eta*B*B/k - k2*N - dk3M*N, eta*M - 2*B*M*eta/k, -k2*M - k3M, 0], [0, k2*N, 0, k2*M, -gamma]])
+
+eig_mat = Matrix([[-alpha - delta*B - lam, 0, -delta *P + beta - 2*beta*B / k, 0, 0], [sp, -k1*N - lam,0, -k1*M, 0], [0, 0, rho - 2*rho*B/k - gamma*R/k - lam, 0, gamma - gamma*B / k], [0, eta*B - eta*B*B/k - k2*N - dk3M*N, eta*M - 2*B*M*eta/k , -k2*M - k3M - lam, 0], [0, k2*N, 0, k2*M, -gamma - lam]])
+
+M_1, k3M1_ = symbols('M_1, K_{3}(M_1)')
+# sub in the non-disease equlibirium point
+eq_J = J.subs(B, 0).subs(R, 0).subs(N, 0).subs(P, 0).subs(M, M_1).subs(dk3M, 0).subs(k3M, k3M1_)
+
+# if M1 = 0
+print(" The eigenvalues when M_1 = 0 are")
+print(eq_J.subs(M_1, 0).subs(k3M1_,0).eigenvals())
+
+```
+
+
+
+For a generic $M_1 >0$ we have the following eigenvalues
+
+```{python}
+
+print(eq_J.eigenvals())
+
+```
+
+or alternatively and perhaps more easily they are the solution to the following equation
+
+```{python}
+
+det_mat = eig_mat.subs(B, 0).subs(R, 0).subs(N, 0).subs(P, 0).subs(M, M_1).subs(dk3M, 0).subs(k3M, k3M1_)
+
+# calculate the determinant and set equal to 0
+Eq(simplify(collect(det_mat.det(),lam)), 0)
+
+
+```
+
+The cubic equation has a negative leading term and a positive vertical intercept so it must have at least one positive real root. Hence the disease free equilibrium is unstable.
+

@@ -20,6 +20,40 @@ ul.task-list li input[type="checkbox"] {
 width: 0.8em;
 margin: 0 0.8em 0.2em -1em;  vertical-align: middle;
 }
+
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+}
+pre.numberSource { margin-left: 3em; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
 </style>
 
 
@@ -3191,6 +3225,14 @@ window.Quarto = {
    
   <ul>
   <li><a href="#full-model" id="toc-full-model" class="nav-link active" data-scroll-target="#full-model"><span class="header-section-number">1</span> Full model</a></li>
+  <li><a href="#kinetic-part-only" id="toc-kinetic-part-only" class="nav-link" data-scroll-target="#kinetic-part-only"><span class="header-section-number">2</span> kinetic part only</a>
+  <ul class="collapse">
+  <li><a href="#steady-states" id="toc-steady-states" class="nav-link" data-scroll-target="#steady-states"><span class="header-section-number">2.1</span> Steady states</a></li>
+  <li><a href="#linearise" id="toc-linearise" class="nav-link" data-scroll-target="#linearise"><span class="header-section-number">2.2</span> Linearise</a>
+  <ul class="collapse">
+  <li><a href="#jacobian-at-non-disease-steady-state" id="toc-jacobian-at-non-disease-steady-state" class="nav-link" data-scroll-target="#jacobian-at-non-disease-steady-state"><span class="header-section-number">2.2.1</span> Jacobian at non-disease steady state</a></li>
+  </ul></li>
+  </ul></li>
   </ul>
 </nav>
 </div>
@@ -3221,7 +3263,7 @@ window.Quarto = {
     <div>
     <div class="quarto-title-meta-heading">Modified</div>
     <div class="quarto-title-meta-contents">
-      <p class="date-modified">December 04, 2024, 12:05:10</p>
+      <p class="date-modified">December 04, 2024, 15:50:33</p>
     </div>
   </div>
     
@@ -3235,9 +3277,143 @@ window.Quarto = {
 <p>This is the paper we will go over: <a href="https://doi.org/10.1007/s00285-023-02025-0">Modelling microtube driven invasion of glioma</a></p>
 <section id="full-model" class="level1" data-number="1">
 <h1 data-number="1"><span class="header-section-number">1</span> Full model</h1>
-<p>The model tracks 5 variables: - <span class="math inline">\(P(t,x,v)\)</span> = TMT tips - <span class="math inline">\(M(t,x,v)\)</span> = Mature TMT formed as the tip extends (the ‘snail trial’) - <span class="math inline">\(N(t,x,v)\)</span> = Migrating nuclei. - <span class="math inline">\(B(t,x)\)</span> = Bulk tumour mass - <span class="math inline">\(R(t,x)\)</span> = Pre-bulk state, during which nuclei have stopped migrating and mature into bulk.</p>
-<p>Each of <span class="math inline">\(P(t,x,v), M(t,x,v)\)</span> and <span class="math inline">\(N(t,x,v)\)</span> depend on time (<span class="math inline">\(t\geq0\)</span>), position <span class="math inline">\(x \in \omega\)</span> where $= ^n $ and orientation <span class="math inline">\(v \in V = S^{n-1}\)</span> with <span class="math inline">\(S^{n-1}\)</span> being the unit sphere. <span class="math inline">\(B(t,x)\)</span> and <span class="math inline">\(R(t,x)\)</span> vary only on time and position.</p>
+<p>The model tracks 5 variables:</p>
+<ul>
+<li><span class="math inline">\(P(t,x,v)\)</span> = TMT tips</li>
+<li><span class="math inline">\(M(t,x,v)\)</span> = Mature TMT formed as the tip extends (the ‘snail trial’)</li>
+<li><span class="math inline">\(N(t,x,v)\)</span> = Migrating nuclei.</li>
+<li><span class="math inline">\(B(t,x)\)</span> = Bulk tumour mass</li>
+<li><span class="math inline">\(R(t,x)\)</span> = Pre-bulk state, during which nuclei have stopped migrating and mature into bulk.</li>
+</ul>
+<p>Each of <span class="math inline">\(P(t,x,v), M(t,x,v)\)</span> and <span class="math inline">\(N(t,x,v)\)</span> depend on time (<span class="math inline">\(t\geq0\)</span>), position <span class="math inline">\(x \in \Omega\)</span> where <span class="math inline">\(\Omega \subset \mathbb{R}^n\)</span> and orientation <span class="math inline">\(v \in V = S^{n-1}\)</span> with <span class="math inline">\(S^{n-1}\)</span> being the unit sphere. <span class="math inline">\(B(t,x)\)</span> and <span class="math inline">\(R(t,x)\)</span> vary only on time and position.</p>
 <p>The model equations are given by</p>
+</section>
+<section id="kinetic-part-only" class="level1" data-number="2">
+<h1 data-number="2"><span class="header-section-number">2</span> kinetic part only</h1>
+<p>If we do not consider the spatial aspect we get a reduced system of ODEs</p>
+<section id="steady-states" class="level2" data-number="2.1">
+<h2 data-number="2.1" class="anchored" data-anchor-id="steady-states"><span class="header-section-number">2.1</span> Steady states</h2>
+<p>There are 2 steady states:</p>
+<p>The diseas free-equilibiria</p>
+<p><span class="math display">\[
+    E_1 = \{ (0,M_1,0,0,0), M_1 &gt; 0 \}
+\]</span></p>
+<p>and the disease equailibria</p>
+<p><span class="math display">\[
+    E_2 = \{ (0,M_1,k,0,0), M_1 &gt; 0 \}
+\]</span></p>
+</section>
+<section id="linearise" class="level2" data-number="2.2">
+<h2 data-number="2.2" class="anchored" data-anchor-id="linearise"><span class="header-section-number">2.2</span> Linearise</h2>
+<p>To linearise the system we calculate the Jacobian for that we need the following partial derivatives</p>
+<p>For the TMT Tips <span class="math display">\[
+    \frac{\partial P_t}{\partial P} = -\alpha - \delta B, \quad
+    \frac{\partial P_t}{\partial M} = 0, \quad
+    \frac{\partial P_t}{\partial B} = - \delta P + \beta - \frac{2 \beta B}{k}, \quad
+    \frac{\partial P_t}{\partial N} = 0, \quad
+    \frac{\partial P_t}{\partial R} = 0
+\]</span></p>
+<p>For TMT ‘snail trials’ <span class="math display">\[
+    \frac{\partial M_t}{\partial P} = s_p, \quad
+    \frac{\partial M_t}{\partial M} = -\tilde{k_1}N, \quad
+    \frac{\partial M_t}{\partial B} = 0, \quad
+    \frac{\partial M_t}{\partial N} = -\tilde{k_1}M, \quad
+    \frac{\partial M_t}{\partial R} = 0,
+\]</span></p>
+<p>For Bulk tumor <span class="math display">\[
+    \frac{\partial B_t}{\partial P} = 0, \quad
+    \frac{\partial B_t}{\partial M} = 0, \quad
+    \frac{\partial B_t}{\partial B} = \rho -\frac{2 \rho B}{k} - \frac{\gamma R}{k}, \quad
+    \frac{\partial B_t}{\partial N} = 0, \quad
+    \frac{\partial B_t}{\partial R} = \gamma - \frac{\gamma B}{k}
+\]</span></p>
+<p>Migrating Nuclei <span class="math display">\[
+    \frac{\partial N_t}{\partial P} = 0, \quad
+    \frac{\partial N_t}{\partial M} = \eta B - \frac{\eta B^2}{k} - \tilde{k_2}N - \frac{d}{dM}\tilde{k_3}(M) N, \quad
+    \frac{\partial N_t}{\partial B} = \eta M - \frac{2 B M \eta}{k}, \quad
+    \frac{\partial N_t}{\partial N} = - \tilde{k_2}M - \tilde{K_3}(M), \quad
+    \frac{\partial N_t}{\partial R} = 0
+\]</span></p>
+<p>Pre-bulk <span class="math display">\[
+    \frac{\partial R_t}{\partial P} = 0, \quad
+    \frac{\partial R_t}{\partial M} = \tilde{k_2}N, \quad
+    \frac{\partial R_t}{\partial B} = 0, \quad
+    \frac{\partial R_t}{\partial N} =  \tilde{k_2}M, \quad
+    \frac{\partial R_t}{\partial R} = - \gamma
+\]</span></p>
+<p>This gives us the jacobian</p>
+<p><span class="math display">\[
+J =
+    \begin{pmatrix}
+    -\alpha - \delta B &amp; 0 &amp; - \delta P + \beta - \frac{2 \beta B}{k} &amp; 0 &amp; 0 \\
+    s_p &amp; -\tilde{k_1}N &amp; 0 &amp; -\tilde{k_1}M &amp; 0 \\
+    0 &amp; 0 &amp; \rho -\frac{2 \rho B}{k} - \frac{\gamma R}{k} &amp; 0 &amp; \gamma - \frac{\gamma B}{k} \\
+    0 &amp; \eta B - \frac{\eta B^2}{k} - \tilde{k_2}N - \frac{d}{dM}\tilde{k_3}(M) N &amp; \eta M - \frac{2 B M \eta}{k} &amp; - \tilde{k_2}M - \tilde{k_3}(M) &amp; 0 \\
+    0 &amp; \tilde{k_2}N &amp; 0 &amp;  \tilde{k_2}M &amp; - \gamma \\
+    \end{pmatrix}
+\]</span></p>
+<section id="jacobian-at-non-disease-steady-state" class="level3" data-number="2.2.1">
+<h3 data-number="2.2.1" class="anchored" data-anchor-id="jacobian-at-non-disease-steady-state"><span class="header-section-number">2.2.1</span> Jacobian at non-disease steady state</h3>
+<p><span class="math display">\[
+J(0,M_1,0,0,0) =
+    \begin{pmatrix}
+    -\alpha &amp; 0 &amp;  \beta &amp; 0 &amp; 0 \\
+    s_p &amp; 0 &amp; 0 &amp; -\tilde{k_1}M_1 &amp; 0 \\
+    0 &amp; 0 &amp; \rho &amp; 0 &amp; \gamma \\
+    0 &amp; 0 &amp; \eta M_1  &amp; - \tilde{k_2}M_1 - \tilde{k_3}(M_1) &amp; 0 \\
+    0 &amp; 0 &amp; 0 &amp;  \tilde{k_2}M_1 &amp; - \gamma \\
+    \end{pmatrix}
+\]</span></p>
+<p>In the case when <span class="math inline">\(M_1 = 0\)</span> we have the following eigenvalues</p>
+<div id="9243334f" class="cell" data-execution_count="1">
+<details class="code-fold">
+<summary>Code</summary>
+<div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> sympy <span class="im">import</span> <span class="op">*</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>alpha, beta, delta, k1, k2, k, M, B, P, R,N, sp, rho, k3, eta, k3M, dk3M, gamma, lam <span class="op">=</span> symbols(<span class="st">&#39;alpha beta delta, k_1 k_2 k M B P R N s_p rho k_3, eta, k_3M, dk3M, gamma lambda&#39;</span>)</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>J <span class="op">=</span> Matrix([[<span class="op">-</span>alpha <span class="op">-</span> delta<span class="op">*</span>B, <span class="dv">0</span>, <span class="op">-</span>delta <span class="op">*</span>P <span class="op">+</span> beta <span class="op">-</span> <span class="dv">2</span><span class="op">*</span>beta<span class="op">*</span>B <span class="op">/</span> k, <span class="dv">0</span>, <span class="dv">0</span>], [sp, <span class="op">-</span>k1<span class="op">*</span>N,<span class="dv">0</span>, <span class="op">-</span>k1<span class="op">*</span>M, <span class="dv">0</span>], [<span class="dv">0</span>, <span class="dv">0</span>, rho <span class="op">-</span> <span class="dv">2</span><span class="op">*</span>rho<span class="op">*</span>B<span class="op">/</span>k <span class="op">-</span> gamma<span class="op">*</span>R<span class="op">/</span>k, <span class="dv">0</span>, gamma <span class="op">-</span> gamma<span class="op">*</span>B <span class="op">/</span> k], [<span class="dv">0</span>, eta<span class="op">*</span>B <span class="op">-</span> eta<span class="op">*</span>B<span class="op">*</span>B<span class="op">/</span>k <span class="op">-</span> k2<span class="op">*</span>N <span class="op">-</span> dk3M<span class="op">*</span>N, eta<span class="op">*</span>M <span class="op">-</span> <span class="dv">2</span><span class="op">*</span>B<span class="op">*</span>M<span class="op">*</span>eta<span class="op">/</span>k, <span class="op">-</span>k2<span class="op">*</span>M <span class="op">-</span> k3M, <span class="dv">0</span>], [<span class="dv">0</span>, k2<span class="op">*</span>N, <span class="dv">0</span>, k2<span class="op">*</span>M, <span class="op">-</span>gamma]])</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>eig_mat <span class="op">=</span> Matrix([[<span class="op">-</span>alpha <span class="op">-</span> delta<span class="op">*</span>B <span class="op">-</span> lam, <span class="dv">0</span>, <span class="op">-</span>delta <span class="op">*</span>P <span class="op">+</span> beta <span class="op">-</span> <span class="dv">2</span><span class="op">*</span>beta<span class="op">*</span>B <span class="op">/</span> k, <span class="dv">0</span>, <span class="dv">0</span>], [sp, <span class="op">-</span>k1<span class="op">*</span>N <span class="op">-</span> lam,<span class="dv">0</span>, <span class="op">-</span>k1<span class="op">*</span>M, <span class="dv">0</span>], [<span class="dv">0</span>, <span class="dv">0</span>, rho <span class="op">-</span> <span class="dv">2</span><span class="op">*</span>rho<span class="op">*</span>B<span class="op">/</span>k <span class="op">-</span> gamma<span class="op">*</span>R<span class="op">/</span>k <span class="op">-</span> lam, <span class="dv">0</span>, gamma <span class="op">-</span> gamma<span class="op">*</span>B <span class="op">/</span> k], [<span class="dv">0</span>, eta<span class="op">*</span>B <span class="op">-</span> eta<span class="op">*</span>B<span class="op">*</span>B<span class="op">/</span>k <span class="op">-</span> k2<span class="op">*</span>N <span class="op">-</span> dk3M<span class="op">*</span>N, eta<span class="op">*</span>M <span class="op">-</span> <span class="dv">2</span><span class="op">*</span>B<span class="op">*</span>M<span class="op">*</span>eta<span class="op">/</span>k , <span class="op">-</span>k2<span class="op">*</span>M <span class="op">-</span> k3M <span class="op">-</span> lam, <span class="dv">0</span>], [<span class="dv">0</span>, k2<span class="op">*</span>N, <span class="dv">0</span>, k2<span class="op">*</span>M, <span class="op">-</span>gamma <span class="op">-</span> lam]])</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>M_1, k3M1_ <span class="op">=</span> symbols(<span class="st">&#39;M_1, K_</span><span class="sc">{3}</span><span class="st">(M_1)&#39;</span>)</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="co"># sub in the non-disease equlibirium point</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>eq_J <span class="op">=</span> J.subs(B, <span class="dv">0</span>).subs(R, <span class="dv">0</span>).subs(N, <span class="dv">0</span>).subs(P, <span class="dv">0</span>).subs(M, M_1).subs(dk3M, <span class="dv">0</span>).subs(k3M, k3M1_)</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="co"># if M1 = 0</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">&quot; The eigenvalues when M_1 = 0 are&quot;</span>)</span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(eq_J.subs(M_1, <span class="dv">0</span>).subs(k3M1_,<span class="dv">0</span>).eigenvals())</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code> The eigenvalues when M_1 = 0 are
+{-gamma: 1, rho: 1, -alpha: 1, 0: 2}</code></pre>
+</div>
+</div>
+<p>For a generic <span class="math inline">\(M_1 &gt;0\)</span> we have the following eigenvalues</p>
+<div id="165c7338" class="cell" data-execution_count="2">
+<details class="code-fold">
+<summary>Code</summary>
+<div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(eq_J.eigenvals())</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>{-K_{3}(M_1)/3 - M_1*k_2/3 - gamma/3 + rho/3 - (-3*K_{3}(M_1)*gamma + 3*K_{3}(M_1)*rho - 3*M_1*gamma*k_2 + 3*M_1*k_2*rho + 3*gamma*rho + (K_{3}(M_1) + M_1*k_2 + gamma - rho)**2)/(3*(-27*K_{3}(M_1)*gamma*rho/2 - 27*M_1**2*eta*gamma*k_2/2 - 27*M_1*gamma*k_2*rho/2 + sqrt((-27*K_{3}(M_1)*gamma*rho - 27*M_1**2*eta*gamma*k_2 - 27*M_1*gamma*k_2*rho + 2*(K_{3}(M_1) + M_1*k_2 + gamma - rho)**3 - (9*K_{3}(M_1) + 9*M_1*k_2 + 9*gamma - 9*rho)*(K_{3}(M_1)*gamma - K_{3}(M_1)*rho + M_1*gamma*k_2 - M_1*k_2*rho - gamma*rho))**2 - 4*(-3*K_{3}(M_1)*gamma + 3*K_{3}(M_1)*rho - 3*M_1*gamma*k_2 + 3*M_1*k_2*rho + 3*gamma*rho + (K_{3}(M_1) + M_1*k_2 + gamma - rho)**2)**3)/2 + (K_{3}(M_1) + M_1*k_2 + gamma - rho)**3 - (9*K_{3}(M_1) + 9*M_1*k_2 + 9*gamma - 9*rho)*(K_{3}(M_1)*gamma - K_{3}(M_1)*rho + M_1*gamma*k_2 - M_1*k_2*rho - gamma*rho)/2)**(1/3)) - (-27*K_{3}(M_1)*gamma*rho/2 - 27*M_1**2*eta*gamma*k_2/2 - 27*M_1*gamma*k_2*rho/2 + sqrt((-27*K_{3}(M_1)*gamma*rho - 27*M_1**2*eta*gamma*k_2 - 27*M_1*gamma*k_2*rho + 2*(K_{3}(M_1) + M_1*k_2 + gamma - rho)**3 - (9*K_{3}(M_1) + 9*M_1*k_2 + 9*gamma - 9*rho)*(K_{3}(M_1)*gamma - K_{3}(M_1)*rho + M_1*gamma*k_2 - M_1*k_2*rho - gamma*rho))**2 - 4*(-3*K_{3}(M_1)*gamma + 3*K_{3}(M_1)*rho - 3*M_1*gamma*k_2 + 3*M_1*k_2*rho + 3*gamma*rho + (K_{3}(M_1) + M_1*k_2 + gamma - rho)**2)**3)/2 + (K_{3}(M_1) + M_1*k_2 + gamma - rho)**3 - (9*K_{3}(M_1) + 9*M_1*k_2 + 9*gamma - 9*rho)*(K_{3}(M_1)*gamma - K_{3}(M_1)*rho + M_1*gamma*k_2 - M_1*k_2*rho - gamma*rho)/2)**(1/3)/3: 1, -K_{3}(M_1)/3 - M_1*k_2/3 - gamma/3 + rho/3 - (-3*K_{3}(M_1)*gamma + 3*K_{3}(M_1)*rho - 3*M_1*gamma*k_2 + 3*M_1*k_2*rho + 3*gamma*rho + (K_{3}(M_1) + M_1*k_2 + gamma - rho)**2)/(3*(-1/2 + sqrt(3)*I/2)*(-27*K_{3}(M_1)*gamma*rho/2 - 27*M_1**2*eta*gamma*k_2/2 - 27*M_1*gamma*k_2*rho/2 + sqrt((-27*K_{3}(M_1)*gamma*rho - 27*M_1**2*eta*gamma*k_2 - 27*M_1*gamma*k_2*rho + 2*(K_{3}(M_1) + M_1*k_2 + gamma - rho)**3 - (9*K_{3}(M_1) + 9*M_1*k_2 + 9*gamma - 9*rho)*(K_{3}(M_1)*gamma - K_{3}(M_1)*rho + M_1*gamma*k_2 - M_1*k_2*rho - gamma*rho))**2 - 4*(-3*K_{3}(M_1)*gamma + 3*K_{3}(M_1)*rho - 3*M_1*gamma*k_2 + 3*M_1*k_2*rho + 3*gamma*rho + (K_{3}(M_1) + M_1*k_2 + gamma - rho)**2)**3)/2 + (K_{3}(M_1) + M_1*k_2 + gamma - rho)**3 - (9*K_{3}(M_1) + 9*M_1*k_2 + 9*gamma - 9*rho)*(K_{3}(M_1)*gamma - K_{3}(M_1)*rho + M_1*gamma*k_2 - M_1*k_2*rho - gamma*rho)/2)**(1/3)) - (-1/2 + sqrt(3)*I/2)*(-27*K_{3}(M_1)*gamma*rho/2 - 27*M_1**2*eta*gamma*k_2/2 - 27*M_1*gamma*k_2*rho/2 + sqrt((-27*K_{3}(M_1)*gamma*rho - 27*M_1**2*eta*gamma*k_2 - 27*M_1*gamma*k_2*rho + 2*(K_{3}(M_1) + M_1*k_2 + gamma - rho)**3 - (9*K_{3}(M_1) + 9*M_1*k_2 + 9*gamma - 9*rho)*(K_{3}(M_1)*gamma - K_{3}(M_1)*rho + M_1*gamma*k_2 - M_1*k_2*rho - gamma*rho))**2 - 4*(-3*K_{3}(M_1)*gamma + 3*K_{3}(M_1)*rho - 3*M_1*gamma*k_2 + 3*M_1*k_2*rho + 3*gamma*rho + (K_{3}(M_1) + M_1*k_2 + gamma - rho)**2)**3)/2 + (K_{3}(M_1) + M_1*k_2 + gamma - rho)**3 - (9*K_{3}(M_1) + 9*M_1*k_2 + 9*gamma - 9*rho)*(K_{3}(M_1)*gamma - K_{3}(M_1)*rho + M_1*gamma*k_2 - M_1*k_2*rho - gamma*rho)/2)**(1/3)/3: 1, -K_{3}(M_1)/3 - M_1*k_2/3 - gamma/3 + rho/3 - (-3*K_{3}(M_1)*gamma + 3*K_{3}(M_1)*rho - 3*M_1*gamma*k_2 + 3*M_1*k_2*rho + 3*gamma*rho + (K_{3}(M_1) + M_1*k_2 + gamma - rho)**2)/(3*(-1/2 - sqrt(3)*I/2)*(-27*K_{3}(M_1)*gamma*rho/2 - 27*M_1**2*eta*gamma*k_2/2 - 27*M_1*gamma*k_2*rho/2 + sqrt((-27*K_{3}(M_1)*gamma*rho - 27*M_1**2*eta*gamma*k_2 - 27*M_1*gamma*k_2*rho + 2*(K_{3}(M_1) + M_1*k_2 + gamma - rho)**3 - (9*K_{3}(M_1) + 9*M_1*k_2 + 9*gamma - 9*rho)*(K_{3}(M_1)*gamma - K_{3}(M_1)*rho + M_1*gamma*k_2 - M_1*k_2*rho - gamma*rho))**2 - 4*(-3*K_{3}(M_1)*gamma + 3*K_{3}(M_1)*rho - 3*M_1*gamma*k_2 + 3*M_1*k_2*rho + 3*gamma*rho + (K_{3}(M_1) + M_1*k_2 + gamma - rho)**2)**3)/2 + (K_{3}(M_1) + M_1*k_2 + gamma - rho)**3 - (9*K_{3}(M_1) + 9*M_1*k_2 + 9*gamma - 9*rho)*(K_{3}(M_1)*gamma - K_{3}(M_1)*rho + M_1*gamma*k_2 - M_1*k_2*rho - gamma*rho)/2)**(1/3)) - (-1/2 - sqrt(3)*I/2)*(-27*K_{3}(M_1)*gamma*rho/2 - 27*M_1**2*eta*gamma*k_2/2 - 27*M_1*gamma*k_2*rho/2 + sqrt((-27*K_{3}(M_1)*gamma*rho - 27*M_1**2*eta*gamma*k_2 - 27*M_1*gamma*k_2*rho + 2*(K_{3}(M_1) + M_1*k_2 + gamma - rho)**3 - (9*K_{3}(M_1) + 9*M_1*k_2 + 9*gamma - 9*rho)*(K_{3}(M_1)*gamma - K_{3}(M_1)*rho + M_1*gamma*k_2 - M_1*k_2*rho - gamma*rho))**2 - 4*(-3*K_{3}(M_1)*gamma + 3*K_{3}(M_1)*rho - 3*M_1*gamma*k_2 + 3*M_1*k_2*rho + 3*gamma*rho + (K_{3}(M_1) + M_1*k_2 + gamma - rho)**2)**3)/2 + (K_{3}(M_1) + M_1*k_2 + gamma - rho)**3 - (9*K_{3}(M_1) + 9*M_1*k_2 + 9*gamma - 9*rho)*(K_{3}(M_1)*gamma - K_{3}(M_1)*rho + M_1*gamma*k_2 - M_1*k_2*rho - gamma*rho)/2)**(1/3)/3: 1, -alpha: 1, 0: 1}</code></pre>
+</div>
+</div>
+<p>or alternatively and perhaps more easily they are the solution to the following equation</p>
+<div id="45748e02" class="cell" data-execution_count="3">
+<details class="code-fold">
+<summary>Code</summary>
+<div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>det_mat <span class="op">=</span> eig_mat.subs(B, <span class="dv">0</span>).subs(R, <span class="dv">0</span>).subs(N, <span class="dv">0</span>).subs(P, <span class="dv">0</span>).subs(M, M_1).subs(dk3M, <span class="dv">0</span>).subs(k3M, k3M1_)</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="co"># calculate the determinant and set equal to 0</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>Eq(simplify(collect(det_mat.det(),lam)), <span class="dv">0</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</details>
+<div class="cell-output cell-output-display cell-output-markdown" data-execution_count="9">
+<p><span class="math inline">\(\displaystyle \lambda \left(\alpha + \lambda\right) \left(K_{3}(M_1) \gamma \rho + M_{1}^{2} \eta \gamma k_{2} + M_{1} \gamma k_{2} \rho - \lambda^{3} + \lambda^{2} \left(- K_{3}(M_1) - M_{1} k_{2} - \gamma + \rho\right) + \lambda \left(- K_{3}(M_1) \gamma + K_{3}(M_1) \rho - M_{1} \gamma k_{2} + M_{1} k_{2} \rho + \gamma \rho\right)\right) = 0\)</span></p>
+</div>
+</div>
+<p>The cubic equation has a negative leading term and a positive vertical intercept so it must have at least one positive real root. Hence the disease free equilibrium is unstable.</p>
+</section>
+</section>
 </section>
 
 </main>
