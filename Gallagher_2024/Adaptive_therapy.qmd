@@ -1,0 +1,227 @@
+---
+title: Adaptive therapy
+description: Model simulation of adaptive therapy
+authors:
+  - name: Nicholas Harbour
+format: 
+  html:
+    embed-resources: true
+    code-fold: true
+    number-sections: true
+    toc: true
+    toc-depth: 3
+    date-modified: last-modified
+    date-format: "MMMM DD, YYYY, HH:mm:ss"
+jupyter: python3
+---
+
+
+[Mathematical Model-Driven Deep Learning Enables Personalized Adaptive Therapy](https://aacrjournals.org/cancerres/article/84/11/1929/745515)
+
+You will need the following packages to run the code:
+
+```{python}
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+```
+
+
+# Lotka-voltera virtual patient model
+
+To simulate a virtaul-patient they use the Lotka-voltera model introduced in Strobl et al.
+
+$$
+\begin{align}
+    \frac{dS}{dt} &= r_S S (1 - \frac{S + R}{K})(1 - d_D D) - d_S S\\
+    \frac{dR}{dt} &= r_R R (1 - \frac{S + R}{K}) - d_R R
+\end{align}
+$$
+
+Where $S(t)$ is the number of sensitive cells, $R(t)$ is the number of resistant cells. $K$ is the carrying capacity of the system, $r_S$ and $r_R$ are the growth rates of the sensitive and resistant cells respectively. $d_S$ and $d_R$ are the death rates of the sensitive and resistant cells respectively. Treatment is assumed to kill sensitive cells at a rate that is proportional to the growth rate and Drug concertation $D(t)$, with proportionality constant $d_D$.
+
+```{python}
+
+t = np.linspace(0,100,1001)
+dt = t[1] - t[0]
+S = np.zeros_like(t)
+R = np.zeros_like(t)
+
+def lotka_voltera(t, y, r_S, r_R, K, d_S, d_R, d_D, D):
+    S, R = y
+    dSdt = r_S * S * (1 - (S + R) / K) * (1 - d_D * D) - d_S * S
+    dRdt = r_R * R * (1 - (S + R) / K) - d_R * R
+    return [dSdt, dRdt]
+
+# Virtual patinet parameters from the supliment
+r_S = 0.03  # /day # sensative cells proliferation rate
+r_R = 0.5 * r_S # 0.5*r_S - 1*r_S # Resistiant cells proliferation rate
+d_S = 0 * r_S # 0*r_S - 0.5*r_S # sensative cells death rate
+d_R = 0 * r_S # 0*r_S - 0.5*r_S # Resistiant cells death rate
+d_D = 1.5 # Drug induced cell killing
+N_0 = 0.75 # Inital tumor size 0.1-0.75
+R_0 = 0.01 * N_0 # Inital resistant cell population: 0.001*N_0 - 0.1*N_0
+K = 1 # Carrying capacity
+D = 0
+
+# Set the IC
+R[0] = R_0
+S[0] = N_0 - R_0
+
+for i in range(len(t)-1):
+
+    RHS = np.array(lotka_voltera(t[i], [S[i], R[i]], r_S, r_R, K, d_S, d_R, d_D,D))
+    S[i+1] = S[i] + RHS[0] * dt
+    R[i+1] = R[i] + RHS[1] * dt
+
+
+
+N = S + R
+
+plt.plot(t, S, label='Sensative cells')
+plt.plot(t, R, label='Resistant cells')
+plt.plot(t, N, label='Total cells')
+
+plt.legend()
+
+```
+
+
+# Simulated treatment
+
+1. CT - continous therapy (standard of care). 
+    $$
+    D(t) = 1 \; \forall t
+    $$
+
+2. AT - adaptive therapy, treatment is is given until 50% decrease from the initial size $N_0$, it is then withdrawn until the tumor returns to the original size $N_0$
+    $$
+    D(t) = \begin{cases}
+        1 & \text{until } N(t) < 0.5 N_0\\
+        0 & \text{until } N(t) \geq 0.5 N_0
+    \end{cases}
+    $$
+
+Define time to progression as the time it takes for the tumor to reach 1.2 times the initial size $N_0$.
+
+```{python}
+def cont_therapy(t, N_0,R_0, r_S, r_R, K, d_S, d_R, d_D):
+
+    S = np.zeros_like(t)
+    R = np.zeros_like(t)
+    N = np.zeros_like(t)
+    D = 1
+    dt = t[1] - t[0]
+    # Set the IC
+    R[0] = R_0
+    S[0] = N_0 - R_0
+    N[0] = N_0
+
+
+    for i in range(len(t)-1):
+
+      
+            
+            
+
+        RHS = np.array(lotka_voltera(t[i], [S[i], R[i]], r_S, r_R, K, d_S, d_R, d_D,D))
+        S[i+1] = S[i] + RHS[0] * dt
+        R[i+1] = R[i] + RHS[1] * dt
+        N[i+1] = S[i+1] + R[i+1]
+
+
+
+    
+
+    return [S, R, N]
+
+
+t = np.linspace(0,800,1001)
+S, R, N = cont_therapy(t, N_0,R_0, r_S, r_R, K, d_S, d_R, d_D)
+
+# Calcualte relative size compared to IC
+N_rel = N / N_0
+S_rel = S / (N_0 )
+R_rel = R / N_0
+
+
+plt.plot(t, S_rel, label='Sensative cells')
+plt.plot(t, R_rel, label='Resistant cells')
+plt.plot(t, N_rel, label='Total cells')
+plt.title('Continous therapy')
+plt.ylabel('Relative size')
+plt.xlabel('Time')
+
+plt.hlines(1.2,0,700,linestyles='dashed')
+
+plt.legend()
+```
+
+
+
+```{python}
+
+
+def adaptive_therapy(t, N_0,R_0, r_S, r_R, K, d_S, d_R, d_D):
+
+    S = np.zeros_like(t)
+    R = np.zeros_like(t)
+    N = np.zeros_like(t)
+    D_save = [1]
+    dt = t[1] - t[0]
+    # Set the IC
+    R[0] = R_0
+    S[0] = N_0 - R_0
+    N[0] = N_0
+
+
+    for i in range(len(t)-1):
+
+      
+        if N[i] >= N_0:
+            D = 1
+            
+        elif N[i] <= 0.5 * N_0: 
+            D = 0
+            
+            
+            
+
+        RHS = np.array(lotka_voltera(t[i], [S[i], R[i]], r_S, r_R, K, d_S, d_R, d_D,D))
+        S[i+1] = S[i] + RHS[0] * dt
+        R[i+1] = R[i] + RHS[1] * dt
+        N[i+1] = S[i+1] + R[i+1]
+        D_save.append(D)
+
+
+
+    
+
+    return [S, R, N, D_save]
+
+
+t = np.linspace(0,800,1001)
+S, R, N, D_save = adaptive_therapy(t, N_0,R_0, r_S, r_R, K, d_S, d_R, d_D)
+
+# Calcualte relative size compared to IC
+N_rel = N / N_0
+S_rel = S / (N_0 )
+R_rel = R / N_0
+
+
+plt.plot(t, S_rel, label='Sensative cells')
+plt.plot(t, R_rel, label='Resistant cells')
+plt.plot(t, N_rel, label='Total cells')
+plt.plot(t, D_save, label='Drug', alpha=0.5)
+plt.title('Adaptive therapy')
+plt.ylabel('Relative size')
+plt.xlabel('Time')
+
+plt.hlines(1.2,0,800,linestyles='dashed')
+
+plt.legend()
+
+```
+
+
