@@ -114,9 +114,8 @@ class LotkaVolterraEnv(gym.Env[np.ndarray, Union[int, np.ndarray]]):
     }
 
     def __init__(
-        self, sutton_barto_reward: bool = False, render_mode: Optional[str] = None
+        self, render_mode: Optional[str] = None
     ):
-        self._sutton_barto_reward = sutton_barto_reward
 
         self.gravity = 9.8
         self.masscart = 1.0
@@ -125,8 +124,19 @@ class LotkaVolterraEnv(gym.Env[np.ndarray, Union[int, np.ndarray]]):
         self.length = 0.5  # actually half the pole's length
         self.polemass_length = self.masspole * self.length
         self.force_mag = 10.0
-        self.tau = 0.02  # seconds between state updates
-        self.kinematics_integrator = "euler"
+        self.tau = 1  # days between state updates
+
+        # Lotka-Volterra parameters
+        self.r_S = 0.03  # /day # sensative cells proliferation rate
+        self.r_R = 0.5 * self.r_S # 0.5*r_S - 1*r_S # Resistiant cells proliferation rate
+        self.d_S = 0 * self.r_S # 0*r_S - 0.5*r_S # sensative cells death rate
+        self.d_R = 0 * self.r_S # 0*r_S - 0.5*r_S # Resistiant cells death rate
+        self.d_D = 1.5 # Drug induced cell killing
+        self.N_0 = 0.75 # Inital tumor size 0.1-0.75
+        self.R_0 = 0.01 * self.N_0 # Inital resistant cell population: 0.001*N_0 - 0.1*N_0
+        self.K = 1 # Carrying capacity
+
+        self.V_threshold = 1.2*self.N_0
 
         # Angle at which to fail the episode
         self.theta_threshold_radians = 12 * 2 * math.pi / 360
@@ -136,16 +146,22 @@ class LotkaVolterraEnv(gym.Env[np.ndarray, Union[int, np.ndarray]]):
         # is still within bounds.
         high = np.array(
             [
-                self.x_threshold * 2,
-                np.inf,
-                self.theta_threshold_radians * 2,
-                np.inf,
+                self.K * 2,
+                self.K * 2,
+            ],
+            dtype=np.float32,
+        )
+
+        low = np.array(
+            [
+                self.K * -1,
+                self.K * -1,
             ],
             dtype=np.float32,
         )
 
         self.action_space = spaces.Discrete(2)
-        self.observation_space = spaces.Box(-high, high, dtype=np.float32)
+        self.observation_space = spaces.Box(low, high, dtype=np.float32)
 
         self.render_mode = render_mode
 
@@ -163,49 +179,27 @@ class LotkaVolterraEnv(gym.Env[np.ndarray, Union[int, np.ndarray]]):
             action
         ), f"{action!r} ({type(action)}) invalid"
         assert self.state is not None, "Call reset before using step method."
-        x, x_dot, theta, theta_dot = self.state
-        force = self.force_mag if action == 1 else -self.force_mag
-        costheta = np.cos(theta)
-        sintheta = np.sin(theta)
+        S, R = self.state
+        D = 1 if action == 1 else 0
 
-        # For the interested reader:
-        # https://coneural.org/florian/papers/05_cart_pole.pdf
-        temp = (
-            force + self.polemass_length * np.square(theta_dot) * sintheta
-        ) / self.total_mass
-        thetaacc = (self.gravity * sintheta - costheta * temp) / (
-            self.length
-            * (4.0 / 3.0 - self.masspole * np.square(costheta) / self.total_mass)
-        )
-        xacc = temp - self.polemass_length * thetaacc * costheta / self.total_mass
 
-        if self.kinematics_integrator == "euler":
-            x = x + self.tau * x_dot
-            x_dot = x_dot + self.tau * xacc
-            theta = theta + self.tau * theta_dot
-            theta_dot = theta_dot + self.tau * thetaacc
-        else:  # semi-implicit euler
-            x_dot = x_dot + self.tau * xacc
-            x = x + self.tau * x_dot
-            theta_dot = theta_dot + self.tau * thetaacc
-            theta = theta + self.tau * theta_dot
+        V = S+R
+        S = S + self.tau*(self.r_S*S*(1 - V/self.K)*(1-self.d_D*D) - self.d_S*S)
+        R = R + self.tau*(self.r_R*R*(1 - V/self.K) - self.d_R*R)
 
-        self.state = np.array((x, x_dot, theta, theta_dot), dtype=np.float64)
+        self.state = np.array((S, R), dtype=np.float64)
 
         terminated = bool(
-            x < -self.x_threshold
-            or x > self.x_threshold
-            or theta < -self.theta_threshold_radians
-            or theta > self.theta_threshold_radians
+            V > self.V_threshold
         )
 
         if not terminated:
-            reward = 0.0 if self._sutton_barto_reward else 1.0
+            reward = 1
         elif self.steps_beyond_terminated is None:
             # Pole just fell!
             self.steps_beyond_terminated = 0
 
-            reward = -1.0 if self._sutton_barto_reward else 1.0
+            reward = -1
         else:
             if self.steps_beyond_terminated == 0:
                 logger.warn(
@@ -214,10 +208,15 @@ class LotkaVolterraEnv(gym.Env[np.ndarray, Union[int, np.ndarray]]):
                 )
             self.steps_beyond_terminated += 1
 
-            reward = -1.0 if self._sutton_barto_reward else 0.0
+            reward = -1
+
+        if D == 0:
+            reward += 1.5
 
         if self.render_mode == "human":
             self.render()
+
+        # print("reward = ",reward)
 
         # truncation=False as the time limit is handled by the `TimeLimit` wrapper added during `make`
         return np.array(self.state, dtype=np.float32), reward, terminated, False, {}
@@ -229,12 +228,7 @@ class LotkaVolterraEnv(gym.Env[np.ndarray, Union[int, np.ndarray]]):
         options: Optional[dict] = None,
     ):
         super().reset(seed=seed)
-        # Note that if you use custom reset bounds, it may lead to out-of-bound
-        # state/observations.
-        low, high = utils.maybe_parse_reset_bounds(
-            options, -0.05, 0.05  # default low
-        )  # default high
-        self.state = self.np_random.uniform(low=low, high=high, size=(4,))
+        self.state = np.array([self.N_0-self.R_0,self.R_0])
         self.steps_beyond_terminated = None
 
         if self.render_mode == "human":
@@ -271,7 +265,7 @@ class LotkaVolterraEnv(gym.Env[np.ndarray, Union[int, np.ndarray]]):
         if self.clock is None:
             self.clock = pygame.time.Clock()
 
-        world_width = self.x_threshold * 2
+        world_width = self.V_threshold * 2
         scale = self.screen_width / world_width
         polewidth = 10.0
         polelen = scale * (2 * self.length)
@@ -281,14 +275,14 @@ class LotkaVolterraEnv(gym.Env[np.ndarray, Union[int, np.ndarray]]):
         if self.state is None:
             return None
 
-        x = self.state
+        S, R = self.state
 
         self.surf = pygame.Surface((self.screen_width, self.screen_height))
         self.surf.fill((255, 255, 255))
 
         l, r, t, b = -cartwidth / 2, cartwidth / 2, cartheight / 2, -cartheight / 2
         axleoffset = cartheight / 4.0
-        cartx = x[0] * scale + self.screen_width / 2.0  # MIDDLE OF CART
+        cartx = S * scale + self.screen_width / 2.0  # MIDDLE OF CART
         carty = 100  # TOP OF CART
         cart_coords = [(l, b), (l, t), (r, t), (r, b)]
         cart_coords = [(c[0] + cartx, c[1] + carty) for c in cart_coords]
@@ -304,7 +298,7 @@ class LotkaVolterraEnv(gym.Env[np.ndarray, Union[int, np.ndarray]]):
 
         pole_coords = []
         for coord in [(l, b), (l, t), (r, t), (r, b)]:
-            coord = pygame.math.Vector2(coord).rotate_rad(-x[2])
+            coord = pygame.math.Vector2(coord).rotate_rad(-R)
             coord = (coord[0] + cartx, coord[1] + carty + axleoffset)
             pole_coords.append(coord)
         gfxdraw.aapolygon(self.surf, pole_coords, (202, 152, 101))
