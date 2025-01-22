@@ -1,4 +1,20 @@
+---
+title: DQN tutorial
+  - name: Nicholas Harbour
+format: 
+  html:
+    embed-resources: true
+    code-fold: true
+    number-sections: true
+    toc: true
+    toc-depth: 3
+    date-modified: last-modified
+    date-format: "MMMM DD, YYYY, HH:mm:ss"
+jupyter: python3
+---
 
+
+Tutorial here: https://pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
 
 
 
