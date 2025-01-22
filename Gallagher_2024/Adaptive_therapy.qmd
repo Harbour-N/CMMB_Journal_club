@@ -57,8 +57,8 @@ def lotka_voltera(t, y, r_S, r_R, K, d_S, d_R, d_D, D):
 # Virtual patinet parameters from the supliment
 r_S = 0.03  # /day # sensative cells proliferation rate
 r_R = 0.5 * r_S # 0.5*r_S - 1*r_S # Resistiant cells proliferation rate
-d_S = 0 * r_S # 0*r_S - 0.5*r_S # sensative cells death rate
-d_R = 0 * r_S # 0*r_S - 0.5*r_S # Resistiant cells death rate
+d_S = 0.2 * r_S # 0*r_S - 0.5*r_S # sensative cells death rate
+d_R = 0.2 * r_S # 0*r_S - 0.5*r_S # Resistiant cells death rate
 d_D = 1.5 # Drug induced cell killing
 N_0 = 0.75 # Inital tumor size 0.1-0.75
 R_0 = 0.01 * N_0 # Inital resistant cell population: 0.001*N_0 - 0.1*N_0
@@ -224,4 +224,72 @@ plt.legend()
 
 ```
 
+
+# Nieve treatment agent
+
+```{python}
+
+
+def random_agent(N):
+    D = np.random.choice([0,1])
+    return D
+
+
+def random_therapy(t, N_0,R_0, r_S, r_R, K, d_S, d_R, d_D):
+
+    S = np.zeros_like(t)
+    R = np.zeros_like(t)
+    N = np.zeros_like(t)
+    D_save = [1]
+    dt = t[1] - t[0]
+    # Set the IC
+    R[0] = R_0
+    S[0] = N_0 - R_0
+    N[0] = N_0
+
+
+    for i in range(len(t)-1):
+
+      
+        D = random_agent(N[i])
+            
+            
+
+        RHS = np.array(lotka_voltera(t[i], [S[i], R[i]], r_S, r_R, K, d_S, d_R, d_D,D))
+        S[i+1] = S[i] + RHS[0] * dt
+        R[i+1] = R[i] + RHS[1] * dt
+        N[i+1] = S[i+1] + R[i+1]
+        D_save.append(D)
+
+
+
+    
+
+    return [S, R, N, D_save]
+
+
+t = np.linspace(0,800,1001)
+S, R, N, D_save = random_therapy(t, N_0,R_0, r_S, r_R, K, d_S, d_R, d_D)
+
+# Calcualte relative size compared to IC
+N_rel = N / N_0
+S_rel = S / (N_0 )
+R_rel = R / N_0
+
+
+plt.plot(t, S_rel, label='Sensative cells')
+plt.plot(t, R_rel, label='Resistant cells')
+plt.plot(t, N_rel, label='Total cells')
+plt.plot(t, D_save, label='Drug', alpha=0.5)
+plt.title('Adaptive therapy')
+plt.ylabel('Relative size')
+plt.xlabel('Time')
+
+plt.hlines(1.2,0,800,linestyles='dashed')
+
+plt.legend()
+
+
+
+```
 

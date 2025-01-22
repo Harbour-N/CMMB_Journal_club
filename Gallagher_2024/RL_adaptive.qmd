@@ -1,0 +1,320 @@
+---
+title: Adaptive therapy
+description: Model simulation of adaptive therapy
+authors:
+  - name: Nicholas Harbour
+format: 
+  html:
+    embed-resources: true
+    code-fold: true
+    number-sections: true
+    toc: true
+    toc-depth: 3
+    date-modified: last-modified
+    date-format: "MMMM DD, YYYY, HH:mm:ss"
+jupyter: python3
+---
+
+
+```{python}
+
+import torch
+import torch.nn as nn
+import numpy as np
+from tqdm import tqdm
+import matplotlib.pyplot as plt
+
+```
+
+This tutorial: https://medium.com/@sofeikov/reinforce-algorithm-reinforcement-learning-from-scratch-in-pytorch-41fcccafa107
+
+REINFORCE algorthum
+
+
+This class defines model
+
+```{python}
+
+
+
+class Tumor_model:
+    def __init__(self, s, r, term_size, N, r_s, r_r, d_s, d_r, d_D, k, dt, N0,s0,r0):
+        self.s = s 
+        self.r = r 
+        self.term_size = term_size
+        self.N = N
+        self.r_s = r_s
+        self.r_r = r_r
+        self.d_s = d_s
+        self.d_r = d_r
+        self.d_D = d_D
+        self.k = k
+        self.dt = dt
+        self.N0 = N0
+        self.s0 = s0
+        self.r0 = r0
+
+
+    def reset(self):
+        self.s = self.s0
+        self.r = self.r0 
+        self.N = self.N0
+
+    def step(self, treatment):
+
+        if treatment == "on":
+            D = 1
+        elif treatment == "off":
+            D = 0
+
+        #print(D)
+
+        dSdt = self.r_s * self.s * (1 - (self.s + self.r) / self.k) * (1 - self.d_D * D) - self.d_s * self.s
+        dRdt = self.r_r * self.r * (1 - (self.s + self.r) / self.k) - self.d_r * self.r
+
+        new_s = self.s + dSdt * self.dt
+        new_r = self.r + dRdt * self.dt
+        new_N = new_s + new_r
+        self.N = new_N
+        self.s = new_s
+        self.r = new_r
+
+        return new_N, new_s, new_r
+
+    def is_at_exit(self):
+        return self.N >= self.N0 * self.term_size
+
+    def get_state(self):
+        return torch.tensor([self.N])
+
+```
+
+
+
+```{python}
+
+# example simulation
+s0 = 0.74
+r0 = 0.01
+term_size = 1.2
+N0 = s0 + r0
+r_s = 0.027
+r_r = 1*r_s
+d_s = r_s * 0.0
+d_r = r_s * 0.0
+d_D = 1.5
+k = 1
+dt = 0.01
+
+example = Tumor_model(s = s0, r = r0, term_size = term_size, N = N0, r_s = r_s ,r_r = r_r ,d_s= d_s,d_r = d_r,d_D =d_D ,k = k,dt = dt, N0 = N0, s0=s0, r0=r0)
+
+Tumor_size = []
+s_size = []
+r_size = []
+for i in range(9000):
+    example.step("on")
+    Tumor_size.append(example.N)
+    s_size.append(example.s)
+    r_size.append(example.r)
+
+plt.plot(Tumor_size)
+plt.plot(s_size)
+plt.plot(r_size)
+
+plt.legend(["Tumor size", "S", "R"])
+
+
+
+```
+
+The input to the network should be a tensor of shape `(batch_size, n_input)`
+
+```{python}
+
+n_input = 1
+n_output = 2
+
+class PolicyNet(nn.Module):
+    def __init__(self):
+        super(PolicyNet, self).__init__()
+        self.fc1 = nn.Linear(n_input, 64)
+        self.fc2 = nn.Linear(64, n_output)
+
+    def forward(self, x):
+        x = nn.functional.relu(self.fc1(x))
+        x = self.fc2(x)
+        x = nn.functional.softmax(x)
+        return x
+
+```
+
+
+REINFORCE assumed the episodic task setting. Fortunately for us, in this case the task is clearly episodic: the episode ends whenever the agent finds the exit. In a grid that is small, it happens fairly quickly. We therefore need a function that is able to generate the whole episode. Here is the code, with comments in the code:
+
+```{python}
+
+# define a dictionary with the actions
+
+actions = {
+    0: "on",
+    1: "off"
+}
+
+
+```
+
+
+
+```{python}
+def generate_episode(tumor_model, policy_net, max_episode_len = 100):
+    tumor_model.reset()
+    state = tumor_model.get_state()
+    ep_length = 0
+    while not tumor_model.is_at_exit():
+        # Convert state to tensor and pass through policy network to get action probabilities
+        ep_length = ep_length + 1
+        action_probs = policy_net(state).squeeze()
+        log_probs = torch.log(action_probs)
+        action = np.random.choice(np.arange(2), p=action_probs.detach().numpy())
+
+        # Take the action and get the new state and reward
+        tumor_model.step(actions[action])
+        next_state = tumor_model.get_state()
+
+        if not tumor_model.is_at_exit():
+            reward = 0.1
+        else:
+            reward = -10
+        
+        if action == 1:
+            reward = reward + 0.2
+        
+
+        # Add the state, action, and reward to the episode
+        new_episode_sample = (state, action, reward)
+        yield new_episode_sample, log_probs
+
+        # Update the current state
+        state = next_state
+        if ep_length > max_episode_len:
+            return
+
+    # Add the final state, action, and reward for reaching the exit position
+    new_episode_sample = (tumor_model.get_state(device), None, 0)
+    yield new_episode_sample, log_probs
+
+```
+
+
+Remember, policy basically describes probabilities of taking certain actions under certain conditions. Also, remember the REINFORCE update rule needs the gradient of the log of the probability, hence we calculate logs of probabilities here.
+
+Finally, we are ready the implement the learning algorithm itself.
+
+```{python}
+
+def gradients_wrt_params(
+    net: torch.nn.Module, loss_tensor: torch.Tensor
+):
+    # Dictionary to store gradients for each parameter
+    # Compute gradients with respect to each parameter
+    for name, param in net.named_parameters():
+        g = torch.autograd.grad(loss_tensor, param, retain_graph=True)[0]
+        param.grad = g
+
+def update_params(net: torch.nn.Module, lr: float) -> None:
+    # Update parameters for the network
+    for name, param in net.named_parameters():
+        param.data += lr * param.grad
+
+```
+
+
+
+```{python}
+
+policy_net = PolicyNet()
+
+# Inital tumor conditions
+s0 = 0.74
+r0 = 0.01
+term_size = 1.2
+N0 = s0 + r0
+r_s = 0.027
+r_r = 1*r_s
+d_s = r_s * 0.0
+d_r = r_s * 0.0
+d_D = 0.5
+k = 1
+dt = 0.01
+
+lengths = []
+rewards = []
+
+gamma = 0.99
+lr_policy_net = 2**-13
+optimizer = torch.optim.Adam(policy_net.parameters(), lr=lr_policy_net)
+
+
+for episode_num in tqdm(range(2500)):
+    all_iterations = []
+    all_log_probs = []    
+    tumor_model = Tumor_model(s = s0, r = r0, term_size = term_size, N = N0, r_s = r_s ,r_r = r_r ,d_s= d_s,d_r = d_r,d_D =d_D ,k = k,dt = dt, N0 = N0, s0=s0, r0=r0)
+    episode = list(generate_episode(tumor_model, policy_net=policy_net))
+    lengths.append(len(episode))
+    loss = 0
+    for t, ((state, action, reward), log_probs) in enumerate(episode[:-1]):
+        gammas_vec = gamma ** (torch.arange(t+1, len(episode))-t-1)
+        # Since the reward is -1 for all steps except the last, we can just sum the gammas
+        G = - torch.sum(gammas_vec)
+        rewards.append(G.item())
+        policy_loss = log_probs[action]
+        optimizer.zero_grad()
+        gradients_wrt_params(policy_net, policy_loss)
+        update_params(policy_net, lr_policy_net  * G * gamma**t)
+
+
+```
+
+
+Now we have a learned policy network (our treatment actor)
+
+
+```{python}
+
+def simulate_tumor_model(tumor_model, policy_net):
+    tumor_model.reset()
+    state = tumor_model.get_state()
+    Tumor_size = []
+    s_size = []
+    r_size = []
+    actions_save = []
+    for i in range(10000):
+        action_probs = policy_net(state).squeeze()
+        cpu_action_probs = action_probs.detach().numpy()
+        action = np.random.choice(np.arange(2), p=cpu_action_probs)
+        #action = 0
+        tumor_model.step(actions[action])
+        state = tumor_model.get_state()
+        Tumor_size.append(tumor_model.N)
+        s_size.append(tumor_model.s)
+        r_size.append(tumor_model.r)
+        actions_save.append(action)
+    
+    return Tumor_size, actions_save, s_size, r_size
+
+# Example usage
+tumor_model = Tumor_model(s=s0, r=r0, term_size=term_size, N=N0, r_s=r_s, r_r=r_r, d_s=d_s, d_r=d_r, d_D=d_D, k=k, dt=dt, N0=N0, s0=s0, r0=r0)  
+Tumor_size, actions_save, s_size, r_size = simulate_tumor_model(tumor_model, policy_net)
+
+
+
+plt.plot(Tumor_size)
+plt.plot(s_size)
+plt.plot(r_size)
+
+plt.plot(np.abs(1-np.array(actions_save)))
+
+plt.legend(["Tumor size", "S", "R", "Treatment"])
+
+```
+
