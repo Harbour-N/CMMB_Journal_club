@@ -126,6 +126,7 @@ class LotkaVolterraEnv(gym.Env[np.ndarray, Union[int, np.ndarray]]):
         self.force_mag = 10.0
         self.tau = 1  # days between state updates
 
+
         # Lotka-Volterra parameters
         self.r_S = 0.03  # /day # sensative cells proliferation rate
         self.r_R = 0.5 * self.r_S # 0.5*r_S - 1*r_S # Resistiant cells proliferation rate
@@ -138,30 +139,14 @@ class LotkaVolterraEnv(gym.Env[np.ndarray, Union[int, np.ndarray]]):
 
         self.V_threshold = 1.2*self.N_0
 
-        # Angle at which to fail the episode
-        self.theta_threshold_radians = 12 * 2 * math.pi / 360
-        self.x_threshold = 2.4
-
-        # Angle limit set to 2 * theta_threshold_radians so failing observation
-        # is still within bounds.
-        high = np.array(
-            [
-                self.K * 2,
-                self.K * 2,
-            ],
-            dtype=np.float32,
-        )
-
-        low = np.array(
-            [
-                self.K * -1,
-                self.K * -1,
-            ],
-            dtype=np.float32,
-        )
+        # Lotka-Volterra variables
+        self.S = self.N_0-self.R_0
+        self.R = self.R_0
+        self.V = self.S+self.R
 
         self.action_space = spaces.Discrete(2)
-        self.observation_space = spaces.Box(low, high, dtype=np.float32)
+        self.observation_space = spaces.Box(0, self.K, shape=(1,),dtype=np.float32)
+        # print("Updated shape")
 
         self.render_mode = render_mode
 
@@ -174,24 +159,43 @@ class LotkaVolterraEnv(gym.Env[np.ndarray, Union[int, np.ndarray]]):
 
         self.steps_beyond_terminated = None
 
+    # Helper function to get the observation of the agent (total tumor size)
+    def _get_obs(self):
+        return np.array([self.S+self.R],dtype=np.float32)
+
+    # Helper function to get the info of the agent (sensative and resistant cells)
+    def _get_info(self):
+        return {
+            "sensitive": self.S,
+            "resistant": self.R,
+        }
+
     def step(self, action):
         assert self.action_space.contains(
             action
         ), f"{action!r} ({type(action)}) invalid"
-        assert self.state is not None, "Call reset before using step method."
+        assert self.state is not None, "Call reset before using step method."   
         S, R = self.state
+        # print(S,R,self.S,self.R)
+        # S = self.S
+        # R = self.R
         D = 1 if action == 1 else 0
 
 
         V = S+R
         S = S + self.tau*(self.r_S*S*(1 - V/self.K)*(1-self.d_D*D) - self.d_S*S)
         R = R + self.tau*(self.r_R*R*(1 - V/self.K) - self.d_R*R)
+        self.S = S
+        self.R = R
 
-        self.state = np.array((S, R), dtype=np.float64)
+        self.state = np.array((S, R), dtype=np.float32)
 
         terminated = bool(
             V > self.V_threshold
         )
+        # if terminated: 
+        #     print(terminated,V)
+
 
         if not terminated:
             reward = 1
@@ -211,15 +215,17 @@ class LotkaVolterraEnv(gym.Env[np.ndarray, Union[int, np.ndarray]]):
             reward = -1
 
         if D == 0:
-            reward += 1.5
+            reward += 2.5
 
         if self.render_mode == "human":
             self.render()
 
         # print("reward = ",reward)
+        observation = self._get_obs()
+        info = self._get_info()
 
         # truncation=False as the time limit is handled by the `TimeLimit` wrapper added during `make`
-        return np.array(self.state, dtype=np.float32), reward, terminated, False, {}
+        return observation, reward, terminated, False, info
 
     def reset(
         self,
@@ -228,12 +234,17 @@ class LotkaVolterraEnv(gym.Env[np.ndarray, Union[int, np.ndarray]]):
         options: Optional[dict] = None,
     ):
         super().reset(seed=seed)
+        self.S = self.N_0-self.R_0
+        self.R = self.R_0
         self.state = np.array([self.N_0-self.R_0,self.R_0])
         self.steps_beyond_terminated = None
+        observation = self._get_obs()
+        info = self._get_info()
 
         if self.render_mode == "human":
             self.render()
-        return np.array(self.state, dtype=np.float32), {}
+
+        return observation, info
 
     def render(self):
         if self.render_mode is None:
