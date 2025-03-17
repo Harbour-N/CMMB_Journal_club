@@ -21,12 +21,14 @@ Link to repo folder [Gallagher_2024](https://github.com/Harbour-N/CMMB_Journal_c
 
 20/03/25 A mechanism-aware and multiomic machine-learning pipeline characterizes yeast cell growth
 Christopher Culley, Supreeta Vijayakumar, Guido Zampieri, and Claudio Angione
-July 16, 2020 PNAS 117 (31) 18869-18879
+July 16, 2020 *PNAS* 117 (31) 18869-18879
 [https://doi.org/10.1073/pnas.2002959117](https://doi.org/10.1073/pnas.2002959117)
 
 
 ## Paper suggestions
 
-Scott, J.G., Dhawan, A., Hjelmeland, A. et al. Recasting the Cancer Stem Cell Hypothesis: Unification Using a Continuum Model of Microenvironmental Forces. Curr Stem Cell Rep 5, 22–30 (2019). [https://doi.org/10.1007/s40778-019-0153-0](https://doi.org/10.1007/s40778-019-0153-0)
+Scott, J.G., Dhawan, A., Hjelmeland, A. et al. Recasting the Cancer Stem Cell Hypothesis: Unification Using a Continuum Model of Microenvironmental Forces. *Curr Stem Cell Rep* 5, 22–30 (2019). [https://doi.org/10.1007/s40778-019-0153-0](https://doi.org/10.1007/s40778-019-0153-0)
 
-Sun, Y., Wang, X., Zhang, D.Y. et al. Brain-wide neuronal circuit connectome of human glioblastoma. Nature (2025). [https://doi.org/10.1038/s41586-025-08634-7](https://doi.org/10.1038/s41586-025-08634-7)
+Sun, Y., Wang, X., Zhang, D.Y. et al. Brain-wide neuronal circuit connectome of human glioblastoma. *Nature* (2025). [https://doi.org/10.1038/s41586-025-08634-7](https://doi.org/10.1038/s41586-025-08634-7)
+
+P Jonnalagedda, B Weinberg, T L Min, S Bhanu, B Bhanu. Computational modeling of tumor invasion from limited and diverse data in Glioblastoma. *Computerized Medical Imaging and Graphics* [https://doi.org/10.1016/j.compmedimag.2024.102436](https://doi.org/10.1016/j.compmedimag.2024.102436)
