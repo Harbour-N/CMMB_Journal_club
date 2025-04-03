@@ -1,0 +1,180 @@
+Generated based on co-pilot query: [gaussian process example predict unlabelled samples based on labelled set python code](https://www.microsoft365.com/chat/entity1-d870f6cd-4aa5-4d42-9626-ab690c041429/eyJpZCI6IlZYTmxjbFl4ZkdoMGRIQnpPaTh2YzNWaWMzUnlZWFJsTFdsdWRDNXZabVpwWTJVdVkyOXRMM3hQU1VRNllqVmlZbVJpWldZdE16UmhaQzAwTXpnekxXSTFOamd0TTJGak56WTBPREl3WXprNWZEUmpZMkZsWkRjekxUWXdORGd0TkRaak15MDVNalV4TFRGbE5qUmlPREU0TTJOak4zd3lNREkxTFRBMExUQXpWREV3T2pBek9qRXpMalU0TmpZeU5EaGEiLCJzY2VuYXJpbyI6InNoYXJlTGlua1ZpYVBvcG92ZXIiLCJwcm9wZXJ0aWVzIjp7InByb21wdFNvdXJjZSI6InVzZXIiLCJjbGlja1RpbWVzdGFtcCI6IjIwMjUtMDQtMDNUMTA6MDM6MTMuNjI5WiJ9LCJjaGF0VHlwZSI6IndlYiIsInZlcnNpb24iOjEuMX0)
+
+```{python}
+import numpy as np
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
+
+# Example labelled data
+X_train = np.array([[1], [3], [5], [6], [7], [8]])
+y_train = np.array([3, 2, 4, 6, 5, 7])
+
+# Define the kernel: ConstantKernel * RBF
+kernel = C(1.0, (1e-4, 1e1)) * RBF(1, (1e-4, 1e1))
+
+# Create GaussianProcessRegressor object
+gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=10)
+
+# Fit to the labelled data
+gp.fit(X_train, y_train)
+
+# Unlabelled data
+X_test = np.array([[2], [4], [9]])
+
+# Predict using the GP model
+y_pred, sigma = gp.predict(X_test, return_std=True)
+
+print("Predicted values:", y_pred)
+print("Standard deviation:", sigma)
+```
+
+```{python}
+import matplotlib.pyplot as plt
+
+plt.plot(X_train,y_train,'*')
+plt.plot(X_test,y_pred,'o')
+plt.show()
+```
+
+Sure! Let's start by generating some data from a 1D simulation of Fisher's equation. Fisher's equation is a partial differential equation (PDE) that models the spread of a biological population. The equation is given by:
+
+$$
+\frac{\partial u}{\partial t} = D \frac{\partial^2 u}{\partial x^2} + ru(1 - u)
+$$
+
+where:
+- \( u(x, t) \) is the population density at position \( x \) and time \( t \).
+- \( D \) is the diffusion coefficient.
+- \( r \) is the growth rate.
+
+We'll use a finite difference method to simulate this equation and then use Gaussian Processes to predict unlabelled samples based on the labelled set. Finally, we'll plot the data and predictions.
+
+Here's the complete Python code:
+
+```{python}
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
+
+# Parameters for Fisher's equation
+D = 0.1
+r = 0.5
+L = 10  # Length of the domain
+T = 5   # Total time
+dx = 0.1
+dt = 0.01
+
+# Discretize the domain
+x = np.arange(0, L + dx, dx)
+t = np.arange(0, T + dt, dt)
+u = np.zeros((len(t), len(x)))
+
+# Initial condition: localized population
+u[0, :] = np.exp(-0.5 * (x - L/2)**2)
+
+# Finite difference method to solve Fisher's equation
+for n in range(0, len(t) - 1):
+    u[n + 1, 1:-1] = u[n, 1:-1] + D * dt / dx**2 * (u[n, 2:] - 2 * u[n, 1:-1] + u[n, :-2]) + r * dt * u[n, 1:-1] * (1 - u[n, 1:-1])
+
+# Select labelled data
+X_train = x[::5].reshape(-1, 1)
+y_train = u[-1, ::5]
+
+# Define the kernel: ConstantKernel * RBF
+kernel = C(1.0, (1e-4, 1e1)) * RBF(1, (1e-4, 1e1))
+
+# Create GaussianProcessRegressor object
+gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=10)
+
+# Fit to the labelled data
+gp.fit(X_train, y_train)
+
+# Unlabelled data
+X_test = x.reshape(-1, 1)
+
+# Predict using the GP model
+y_pred, sigma = gp.predict(X_test, return_std=True)
+
+# Plot the results
+plt.figure(figsize=(10, 6))
+plt.plot(x, u[-1, :], 'r.', markersize=10, label='True values')
+plt.plot(X_train, y_train, 'b.', markersize=10, label='Labelled data')
+plt.plot(X_test, y_pred, 'k-', label='GP predictions')
+plt.fill_between(X_test.ravel(), y_pred - 1.96 * sigma, y_pred + 1.96 * sigma, alpha=0.2, color='k')
+plt.xlabel('x')
+plt.ylabel('u')
+plt.legend()
+plt.title("Gaussian Process Regression on Fisher's Equation Data")
+plt.show()
+```
+
+In this code:
+1. We simulate Fisher's equation using a finite difference method.
+2. We select some labelled data from the simulation.
+3. We create and fit a Gaussian Process model to the labelled data.
+4. We predict the values for the unlabelled data and plot the true values, labelled data, and GP predictions.
+
+Feel free to run this code and visualize the results! If you have any questions or need further assistance, just let me know.
+
+
+```{python}
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
+
+# Parameters for Fisher's equation
+D = 0.025
+r = 0.5
+L = 10  # Length of the domain
+T = 5   # Total time
+dx = 0.1
+dt = 0.01
+
+# Discretize the domain
+x = np.arange(0, L + dx, dx)
+Nx = len(x)
+t = np.arange(0, T + dt, dt)
+u = np.zeros((len(t), Nx))
+
+# Initial condition: localized population
+u[0, :] = np.exp(-0.5 * (x - L/2)**2)
+
+# Finite difference method to solve Fisher's equation
+for n in range(0, len(t) - 1):
+    u[n + 1, 1:-1] = u[n, 1:-1] + D * dt / dx**2 * (u[n, 2:] - 2 * u[n, 1:-1] + u[n, :-2]) + r * dt * u[n, 1:-1] * (1 - u[n, 1:-1])
+
+# Select labelled data and add noise
+label_sep = 20
+label_i = np.arange(label_sep,Nx-1,label_sep)
+X_train = x[label_i].reshape(-1, 1)
+y_train = u[-1, label_i] + np.random.normal(0, 0.05, size=u[-1, label_i].shape)  # Adding noise
+
+# Define the kernel: ConstantKernel * RBF
+kernel = C(1.0, (1e-4, 1e1)) * RBF(1, (1e-4, 1e1))
+
+# Create GaussianProcessRegressor object
+gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=10)
+
+# Fit to the labelled data
+gp.fit(X_train, y_train)
+
+# Unlabelled data
+X_test = x.reshape(-1, 1)
+
+# Predict using the GP model
+y_pred, sigma = gp.predict(X_test, return_std=True)
+
+# Plot the results
+plt.figure(figsize=(10, 6))
+plt.plot(x, u[-1, :], 'r.', markersize=10, label='True values')
+plt.plot(X_train, y_train, 'b.', markersize=10, label='Labelled data with noise')
+plt.plot(X_test, y_pred, 'k-', label='GP predictions')
+plt.fill_between(X_test.ravel(), y_pred - 1.96 * sigma, y_pred + 1.96 * sigma, alpha=0.2, color='k')
+plt.xlabel('x')
+plt.ylabel('u')
+plt.legend()
+plt.title("Gaussian Process Regression on Fisher's Equation Data with Noise")
+plt.show()
+```
