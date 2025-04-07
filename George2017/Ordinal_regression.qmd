@@ -1,0 +1,107 @@
+---
+title: Ordinal regression in python
+description: NA
+authors:
+  - name: Nicholas Harbour
+format: 
+  html:
+    embed-resources: true
+    code-fold: true
+    number-sections: true
+    toc: true
+    toc-depth: 3
+    date-modified: last-modified
+    date-format: "MMMM DD, YYYY, HH:mm:ss"
+jupyter: python3
+---
+
+
+```{python}
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+```
+
+
+# Logistic regression
+
+The logistic regression is also known in the literature as logit regression, maximum-entropy classification (MaxEnt) or the log-linear classifier.
+Logistic regression is a linear classifier.
+Although it’s essentially a method for binary classification, it can also be applied to multiclass problems.
+
+::: {.callout-note}
+Logistic regression is a special case of Generalized Linear Models with a Binomial / Bernoulli conditional distribution and a Logit link. The numerical output of the logistic regression, which is the predicted probability, can be used as a classifier by applying a threshold (by default 0.5) to it. This is how it is implemented in scikit-learn, so it expects a categorical target, making the Logistic Regression a classifier.
+:::
+
+Dependent variable y (will be binary).
+Set of independnet variables $\vec{x} = (x_1, x_2, ..., x_r)$ where $r$ is the number of predictors (inputs).
+We start with the known values of the predictors $x_i$ and the corresponding actual response (output) $y_i$ for $i = 1, 2, ..., n$ observations.
+The goal is to find the logistic regression function $p(\vec{x})$ such that the predicted response $p(\vec{x_i})$ are as close as possible to the actual response $y_i$ for $i = 1, 2, ..., n$ observations.
+
+Once we have fit the logistic regression function $p(\vec{x})$, we can use it to predict the outputs for new unseen inputs.
+
+Logistic regression is a linear classifier so we will use the linear function
+
+$$
+f(\vec{x}) = \beta_0 + \beta_1 x_1 + \beta_2 x_2 + ... + \beta_r x_r
+$$
+
+this is also known as the logit function.
+The variables $\beta_0, \beta_1, \beta_2, ..., \beta_r$ are the coefficients of the model (estimators, or predicted weights) that are fit to the data.
+
+The logistic regression function $p(\vec{x})$ is the sigmoid function of $f(\vec{x})$:
+
+$$
+p(\vec{x}) = \frac{1}{1 + e^{-f(\vec{x})}}
+$$
+
+This function is often interpreted as the predicted probability that the output for a given input ($\vec{x}$) will be equal to 1 (and therefore $1-p(\vec{x})$) is the probability that the output is 0.
+
+In the fitting logistic regression determes the best predicted weights $\beta_0, \beta_1, \beta_2, ..., \beta_r$ that minimize the error between the predicted responses and the actual responses.
+To get the best weights usually we maximise the log-likelihood function (LLF) for all observations $i = 1, 2, ..., n$.
+
+$$
+LLF = \sum_{i=1}^{n} y_i \log(p(\vec{x_i})) + (1 - y_i) \log(1 - p(\vec{x_i}))
+$$
+
+The goal is to maximise the LLF.
+
+One final relationship between $p(\vec{x})$ and $f(\vec{x})$ is that
+
+$$
+log(\frac{p(\vec{x})}{1 - p(\vec{x})}) = f(\vec{x})
+$$
+
+This is the log-odds or logit function.
+
+Logistic regression is used to model the probability that the dependedt variable is 1.
+The logistic regression model can be expressed as
+
+$$
+P(Y=1|\vec{x}) = \frac{1}{1 + e^{-f(\vec{x})}}
+$$
+
+# Ordinal (logistic) regression
+
+Ordinal logistic regression is used when the dependent variable is ordinal, meaning it has more than two categories that have a natural order (e.g., ratings from 1 to 5). The goal is to model the probability of the outcome falling into a particular category or below.
+
+The ordinal logistic regression model can be expressed using cumulative probabilities 
+
+$$
+P(Y \leq j|\vec{x}) = \frac{1}{1 + e^{-(\beta_0 + \beta_1 x_1 + \beta_2 x_2 + ... + \beta_r x_r)}}
+$$
+
+where $P(Y \leq j|\vec{x})$ is the probability that the dependent variable is less than or equal to category $j$ given the input $\vec{x}$ and $f_j(\vec{x})$ is the linear function for the $j$-th category.
+$\alpha_j$ is the threshold parameter for the $j$-th category.
+The cumulative odds cab be expressed as
+
+$$
+logit(P(Y \leq j|\vec{x})) = log( \frac{P(Y \leq j | \vec{x})}{1 - P(Y \leq j | \vec{x})} ) = \alpha_j - (\beta_0 + \beta_1 x_1 + \beta_2 x_2 + ... + \beta_r x_r)
+$$
+
+In ordinal logistic regression, the categories are considered "parallel" in the sense that the model assumes the same relationship between the independent variables and the log-odds of being in a lower category versus higher categories. This is often referred to as the "proportional odds assumption."
+
+1. Proportional Odds Assumption:
+This assumption states that the effect of the independent variables is consistent across all thresholds. For example, if you have three ordered categories (1, 2, 3), the model assumes that the relationship between the predictors and the odds of being in category 1 versus 2 is the same as the relationship between the predictors and the odds of being in category 2 versus 3.

@@ -55,10 +55,10 @@ def lotka_voltera(t, y, r_S, r_R, K, d_S, d_R, d_D, D):
     return [dSdt, dRdt]
 
 # Virtual patinet parameters from the supliment
-r_S = 0.03  # /day # sensative cells proliferation rate
-r_R = 0.5 * r_S # 0.5*r_S - 1*r_S # Resistiant cells proliferation rate
-d_S = 0.2 * r_S # 0*r_S - 0.5*r_S # sensative cells death rate
-d_R = 0.2 * r_S # 0*r_S - 0.5*r_S # Resistiant cells death rate
+r_S = 0.027  # /day # sensative cells proliferation rate
+r_R = 1 * r_S # 0.5*r_S - 1*r_S # Resistiant cells proliferation rate
+d_S = 0.1 * r_S # 0*r_S - 0.5*r_S # sensative cells death rate
+d_R = 0.1 * r_S # 0*r_S - 0.5*r_S # Resistiant cells death rate
 d_D = 1.5 # Drug induced cell killing
 N_0 = 0.75 # Inital tumor size 0.1-0.75
 R_0 = 0.01 * N_0 # Inital resistant cell population: 0.001*N_0 - 0.1*N_0
