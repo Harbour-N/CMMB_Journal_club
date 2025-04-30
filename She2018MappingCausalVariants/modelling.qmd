@@ -1,6 +1,22 @@
 ---
-title: "Untitled"
-format: html
+title: Modelling yeast cross from two parents
+authors:
+  - name: Markus Owen
+format: 
+  html:
+    embed-resources: true
+    code-fold: true
+    number-sections: true
+    toc: true
+    toc-depth: 3
+    date: now
+    date-modified: last-modified
+    date-format: "MMMM DD, YYYY, HH:mm:ss"
+  pdf: 
+    number-sections: true
+    colorlinks: true
+execute:
+  echo: true
 jupyter: python3
 ---
 
@@ -13,12 +29,13 @@ import matplotlib.pyplot as plt
 
 # Parameters
 num_variants = 100  # Number of variants
-num_generations = 5  # Number of generations in the intercross
+num_generations = 6  # Number of generations in the intercross
 num_cells_per_parent = 10  # Number of cells per parent
 mean_coverage_threshold = 10  # Threshold for accurate variant calling
 recombination_rate = 0.05  # Recombination rate (recombinations per unit genome length)
 
 # Function to simulate random distribution of variants
+# treats the genome as length one
 def simulate_variants(num_variants):
     return np.sort(np.random.rand(num_variants))
 
@@ -26,6 +43,8 @@ def simulate_variants(num_variants):
 def initialize_parents(num_cells_per_parent, num_variants):
     parent1 = np.random.choice([0, 1], size=num_variants)  # Parent 1 markers
     parent2 = np.random.choice([0, 1], size=num_variants)  # Parent 2 markers
+    parent1 = np.zeros(num_variants)  # Parent 1 markers
+    parent2 = np.ones(num_variants)  # Parent 2 markers
     cells_parent1 = np.tile(parent1, (num_cells_per_parent, 1))
     cells_parent2 = np.tile(parent2, (num_cells_per_parent, 1))
     phase_parent1 = np.ones_like(cells_parent1)
@@ -33,18 +52,21 @@ def initialize_parents(num_cells_per_parent, num_variants):
     return cells_parent1, cells_parent2, phase_parent1, phase_parent2
 
 # Function to simulate recombination with multiple segments
-def simulate_recombination(cells_parent1, cells_parent2, phase_parent1, phase_parent2, num_generations, recombination_rate):
+def simulate_recombination(cells_parent1, cells_parent2, phase_parent1, phase_parent2, num_generations, recombination_rate, variants):
     parents = np.vstack((cells_parent1, cells_parent2))
     phases = np.vstack((phase_parent1, phase_parent2))
     for generation in range(num_generations):
         print("Generation: ",generation)
-        new_parents, new_phases = simulate_recombination_once(parents, phases, recombination_rate)
+        new_parents, new_phases = simulate_recombination_once(parents, phases, recombination_rate, variants)
         parents = new_parents
         phases = new_phases
     return parents, phases
 
 # Function to simulate one round of recombination with multiple segments
-def simulate_recombination_once(parents, phases, recombination_rate):
+# this chooses recombination sites from the set of marker locations, which isn't quite what would happen, but the effect would be the same - if the actual segment went beyond the marker any information between markers is lost anyway
+# more importantly, variants are not uniformly spaced so the probability of recombination should account for that
+# should pick recombination sites uniformly distributed in space and then find where the variant locations sit in relation to those points
+def simulate_recombination_once(parents, phases, recombination_rate, variants):
     num_cells = parents.shape[0]
     num_variants = parents.shape[1]
     num_swaps = int(recombination_rate * num_variants)  # Number of swaps based on recombination rate
@@ -63,22 +85,24 @@ def simulate_recombination_once(parents, phases, recombination_rate):
         # print("child1_phase: ",child1_phase)
         # print("child2_phase: ",child2_phase)
         # choose num_swaps recombination sites
-        recombination_sites = np.sort(np.random.choice(num_variants, size=num_swaps, replace=False))
-        start = recombination_sites[0]
+        recombination_sites = np.sort(np.random.rand(num_swaps))
+        # recombination_indices = np.sort(np.random.choice(num_variants, size=num_swaps, replace=False))
+        recombination_indices = variants.searchsorted(recombination_sites)
+        start = recombination_indices[0]
         # swap a segment then jump two recombination sites forward
         for isite in range(0,num_swaps,2):
             if isite == num_swaps-1:
                 end = num_variants
             else:
-                end = recombination_sites[isite+1]
+                end = recombination_indices[isite+1]
             # print("isite = ",isite,"; num_swaps = ",num_swaps)
-            # print("recombination sites = ",recombination_sites,"; start = ",start,"; end = ",end)
+            # print("recombination indices = ",recombination_indices,"; start = ",start,"; end = ",end)
             child1[start:end] = parents[parent2][start:end]
             child2[start:end] = parents[parent1][start:end]
             child1_phase[start:end] = phases[parent2][start:end]
             child2_phase[start:end] = phases[parent1][start:end]
             if isite < num_swaps-2:
-                start = recombination_sites[isite+2]
+                start = recombination_indices[isite+2]
             # print("child1_phase: ",child1_phase)
             # print("child2_phase: ",child2_phase)
         new_cells.append(child1)
@@ -106,7 +130,7 @@ print("Initial Parent 1 Cells:\n", cells_parent1)
 print("Initial Parent 2 Cells:\n", cells_parent2)
 
 # Simulate recombination over generations
-recombined_parents, recombined_phases = simulate_recombination(cells_parent1, cells_parent2, phase_parent1, phase_parent2, num_generations, recombination_rate)
+recombined_parents, recombined_phases = simulate_recombination(cells_parent1, cells_parent2, phase_parent1, phase_parent2, num_generations, recombination_rate, variants)
 
 # Model missing genotypes for all parents
 missing_genotypes = model_missing_genotypes(recombined_parents, mean_coverage_threshold)
@@ -120,6 +144,7 @@ print("Missing Genotypes:\n", missing_genotypes)
 ```{python}
 
 recombination_rate = 0.2  # Recombination rate (recombinations per unit genome length)
+num_generations = 10  # Number of generations in the intercross
 
 parents = np.vstack((cells_parent1, cells_parent2))
 phases = np.vstack((phase_parent1, phase_parent2))
@@ -133,7 +158,7 @@ phases_generations.append(phases)
 
 for generation in range(num_generations):
     print("Generation: ",generation)
-    new_parents, new_phases = simulate_recombination_once(parents, phases, recombination_rate)
+    new_parents, new_phases = simulate_recombination_once(parents, phases, recombination_rate, variants)
     parents = new_parents
     phases = new_phases
     parents_generations.append(parents)
@@ -143,10 +168,10 @@ for generation in range(num_generations):
 fig, ax = plt.subplots(nrows=num_generations+1,ncols=2,figsize=(8.5,7))
 for generation in range(num_generations+1):
     ax[generation,0].imshow(parents_generations[generation])
-    ax[generation,0].set_title('Cells')
     ax[generation,1].imshow(phases_generations[generation])
-    ax[generation,1].set_title('Phases')
 
+ax[0,0].set_title('Cells')
+ax[0,1].set_title('Phases')
 plt.show()
 
 
@@ -170,5 +195,13 @@ plt.show()
 fig, ax = plt.subplots(figsize=(8.5,7))
 plt.imshow(recombined_parents)
 ax.set_title('Final population')
+
+```
+
+```{python}
+
+# choose number of markers
+# generate phenotypes
+
 
 ```
