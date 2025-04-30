@@ -16,7 +16,7 @@ num_variants = 100  # Number of variants
 num_generations = 5  # Number of generations in the intercross
 num_cells_per_parent = 10  # Number of cells per parent
 mean_coverage_threshold = 10  # Threshold for accurate variant calling
-recombination_rate = 0.01  # Recombination rate (recombinations per unit genome length)
+recombination_rate = 0.05  # Recombination rate (recombinations per unit genome length)
 
 # Function to simulate random distribution of variants
 def simulate_variants(num_variants):
@@ -60,13 +60,27 @@ def simulate_recombination_once(parents, phases, recombination_rate):
         child2 = np.copy(parents[parent2])
         child1_phase = np.copy(phases[parent1])
         child2_phase = np.copy(phases[parent2])
-        for _ in range(num_swaps):
-            recombination_sites = np.sort(np.random.choice(num_variants, size=2, replace=False))
-            start, end = recombination_sites
+        # print("child1_phase: ",child1_phase)
+        # print("child2_phase: ",child2_phase)
+        # choose num_swaps recombination sites
+        recombination_sites = np.sort(np.random.choice(num_variants, size=num_swaps, replace=False))
+        start = recombination_sites[0]
+        # swap a segment then jump two recombination sites forward
+        for isite in range(0,num_swaps,2):
+            if isite == num_swaps-1:
+                end = num_variants
+            else:
+                end = recombination_sites[isite+1]
+            # print("isite = ",isite,"; num_swaps = ",num_swaps)
+            # print("recombination sites = ",recombination_sites,"; start = ",start,"; end = ",end)
             child1[start:end] = parents[parent2][start:end]
             child2[start:end] = parents[parent1][start:end]
             child1_phase[start:end] = phases[parent2][start:end]
             child2_phase[start:end] = phases[parent1][start:end]
+            if isite < num_swaps-2:
+                start = recombination_sites[isite+2]
+            # print("child1_phase: ",child1_phase)
+            # print("child2_phase: ",child2_phase)
         new_cells.append(child1)
         new_cells.append(child2)
         new_phases.append(child1_phase)
@@ -105,7 +119,7 @@ print("Missing Genotypes:\n", missing_genotypes)
 ```
 ```{python}
 
-recombination_rate = 0.1  # Recombination rate (recombinations per unit genome length)
+recombination_rate = 0.2  # Recombination rate (recombinations per unit genome length)
 
 parents = np.vstack((cells_parent1, cells_parent2))
 phases = np.vstack((phase_parent1, phase_parent2))
@@ -126,8 +140,8 @@ for generation in range(num_generations):
     phases_generations.append(phases)
 
 
-fig, ax = plt.subplots(nrows=num_generations,ncols=2,figsize=(8.5,7))
-for generation in range(num_generations):
+fig, ax = plt.subplots(nrows=num_generations+1,ncols=2,figsize=(8.5,7))
+for generation in range(num_generations+1):
     ax[generation,0].imshow(parents_generations[generation])
     ax[generation,0].set_title('Cells')
     ax[generation,1].imshow(phases_generations[generation])
