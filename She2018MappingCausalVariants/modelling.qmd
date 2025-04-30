@@ -1,0 +1,108 @@
+---
+title: "Untitled"
+format: html
+jupyter: python3
+---
+
+```{python}
+import numpy as np
+import matplotlib.pyplot as plt
+```
+
+```{python}
+
+# Parameters
+num_variants = 10  # Number of variants
+num_generations = 5  # Number of generations in the intercross
+num_cells_per_parent = 10  # Number of cells per parent
+mean_coverage_threshold = 10  # Threshold for accurate variant calling
+recombination_rate = 0.01  # Recombination rate (recombinations per unit genome length)
+
+# Function to simulate random distribution of variants
+def simulate_variants(num_variants):
+    return np.sort(np.random.rand(num_variants))
+
+# Function to initialize parents with marker values
+def initialize_parents(num_cells_per_parent, num_variants):
+    parent1 = np.random.choice([0, 1], size=num_variants)  # Parent 1 markers
+    parent2 = np.random.choice([0, 1], size=num_variants)  # Parent 2 markers
+    cells_parent1 = np.tile(parent1, (num_cells_per_parent, 1))
+    cells_parent2 = np.tile(parent2, (num_cells_per_parent, 1))
+    return cells_parent1, cells_parent2
+
+# Function to simulate recombination with multiple segments
+def simulate_recombination(cells_parent1, cells_parent2, num_generations, recombination_rate):
+    num_cells = cells_parent1.shape[0]
+    num_variants = cells_parent1.shape[1]
+    parents = np.vstack((cells_parent1, cells_parent2))
+    num_swaps = int(recombination_rate * num_variants)  # Number of swaps based on recombination rate
+    for generation in range(num_generations):
+        new_parents = []
+        indices = np.arange(parents.shape[0])
+        np.random.shuffle(indices)
+        print("Generation: ",generation)
+        print("Indices: ",indices)
+        for i in range(0, len(indices), 2):
+            print("Cell pair: ",i," out of ",len(indices))
+            parent1, parent2 = indices[i], indices[i+1]
+            child1 = np.copy(parents[parent1])
+            child2 = np.copy(parents[parent2])
+            for _ in range(num_swaps):
+                recombination_sites = np.sort(np.random.choice(num_variants, size=2, replace=False))
+                start, end = recombination_sites
+                child1[start:end] = parents[parent2][start:end]
+                child2[start:end] = parents[parent1][start:end]
+            new_parents.append(child1)
+            new_parents.append(child2)
+        parents = np.array(new_parents)
+    return parents
+
+# Function to model missing genotypes as a Poisson process
+def model_missing_genotypes(parents, mean_coverage_threshold):
+    num_cells, num_variants = parents.shape
+    coverage = np.random.poisson(mean_coverage_threshold, size=(num_cells, num_variants))
+    missing_genotypes = np.where(coverage < mean_coverage_threshold, np.nan, parents)
+    return missing_genotypes
+
+# Simulate variants
+variants = simulate_variants(num_variants)
+
+# Initialize parents with marker values
+cells_parent1, cells_parent2 = initialize_parents(num_cells_per_parent, num_variants)
+
+print("Simulated Variants:", variants)
+print("Initial Parent 1 Cells:\n", cells_parent1)
+print("Initial Parent 2 Cells:\n", cells_parent2)
+
+# Simulate recombination over generations
+recombined_parents = simulate_recombination(cells_parent1, cells_parent2, num_generations, recombination_rate)
+
+# Model missing genotypes for all parents
+missing_genotypes = model_missing_genotypes(recombined_parents, mean_coverage_threshold)
+
+# Output results
+print("Recombined Parents Markers:\n", recombined_parents)
+print("Missing Genotypes:\n", missing_genotypes)
+
+
+```
+```{python}
+
+fig, ax = plt.subplots(nrows=2,figsize=(8.5,7))
+
+ax[0].imshow(cells_parent1)
+ax[0].set_title('parent 1')
+
+ax[1].imshow(cells_parent2)
+ax[1].set_title('parent 2')
+
+plt.show()
+```
+
+```{python}
+
+plt.imshow(cells_parent2)
+
+plt.imshow(recombined_parents)
+
+```
