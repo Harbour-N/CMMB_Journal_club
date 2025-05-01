@@ -26,11 +26,14 @@ import matplotlib.pyplot as plt
 ```
 
 ```{python}
+rng = np.random.default_rng(1)
+```
+```{python}
 
 # Parameters
-num_variants = 100  # Number of variants
+num_variants = 1000  # Number of variants
 num_generations = 6  # Number of generations in the intercross
-num_cells_per_parent = 10  # Number of cells per parent
+num_cells_per_parent = 500  # Number of cells per parent
 mean_coverage_threshold = 10  # Threshold for accurate variant calling
 recombination_rate = 0.05  # Recombination rate (recombinations per unit genome length)
 
@@ -74,9 +77,9 @@ def simulate_recombination_once(parents, phases, recombination_rate, variants):
     new_phases = []
     indices = np.arange(num_cells)
     np.random.shuffle(indices)
-    print("Indices: ",indices)
+    # print("Indices: ",indices)
     for i in range(0, len(indices), 2):
-        print("Cell pair: ",i," out of ",len(indices))
+        # print("Cell pair: ",i," out of ",len(indices))
         parent1, parent2 = indices[i], indices[i+1]
         child1 = np.copy(parents[parent1])
         child2 = np.copy(parents[parent2])
@@ -125,9 +128,9 @@ variants = simulate_variants(num_variants)
 # Initialize parents with marker values
 cells_parent1, cells_parent2, phase_parent1, phase_parent2 = initialize_parents(num_cells_per_parent, num_variants)
 
-print("Simulated Variants:", variants)
-print("Initial Parent 1 Cells:\n", cells_parent1)
-print("Initial Parent 2 Cells:\n", cells_parent2)
+# print("Simulated Variants:", variants)
+# print("Initial Parent 1 Cells:\n", cells_parent1)
+# print("Initial Parent 2 Cells:\n", cells_parent2)
 
 # Simulate recombination over generations
 recombined_parents, recombined_phases = simulate_recombination(cells_parent1, cells_parent2, phase_parent1, phase_parent2, num_generations, recombination_rate, variants)
@@ -136,15 +139,15 @@ recombined_parents, recombined_phases = simulate_recombination(cells_parent1, ce
 missing_genotypes = model_missing_genotypes(recombined_parents, mean_coverage_threshold)
 
 # Output results
-print("Recombined Parents Markers:\n", recombined_parents)
-print("Missing Genotypes:\n", missing_genotypes)
+# print("Recombined Parents Markers:\n", recombined_parents)
+# print("Missing Genotypes:\n", missing_genotypes)
 
 
 ```
 ```{python}
 
 recombination_rate = 0.2  # Recombination rate (recombinations per unit genome length)
-num_generations = 10  # Number of generations in the intercross
+num_generations = 6  # Number of generations in the intercross
 
 parents = np.vstack((cells_parent1, cells_parent2))
 phases = np.vstack((phase_parent1, phase_parent2))
@@ -167,8 +170,8 @@ for generation in range(num_generations):
 
 fig, ax = plt.subplots(nrows=num_generations+1,ncols=2,figsize=(8.5,7))
 for generation in range(num_generations+1):
-    ax[generation,0].imshow(parents_generations[generation])
-    ax[generation,1].imshow(phases_generations[generation])
+    ax[generation,0].imshow(parents_generations[generation],aspect='auto')
+    ax[generation,1].imshow(phases_generations[generation],aspect='auto')
 
 ax[0,0].set_title('Cells')
 ax[0,1].set_title('Phases')
@@ -179,29 +182,103 @@ plt.show()
 
 ```{python}
 
-fig, ax = plt.subplots(nrows=2,figsize=(8.5,7))
-
-ax[0].imshow(cells_parent1)
-ax[0].set_title('parent 1')
-
-ax[1].imshow(cells_parent2)
-ax[1].set_title('parent 2')
-
-plt.show()
-```
-
-```{python}
-
 fig, ax = plt.subplots(figsize=(8.5,7))
-plt.imshow(recombined_parents)
+plt.imshow(recombined_parents,aspect='auto')
 ax.set_title('Final population')
 
 ```
 
 ```{python}
+# https://stackoverflow.com/questions/1903462/how-can-i-zip-sort-parallel-numpy-arrays
+def sort_by_abs_value(s, p):
+    indexes = abs(s).argsort()
+    return s[indexes], p[indexes]
+```
+```{python}
 
 # choose number of markers
+num_causal_variants = 10
+causal_indices = np.sort(rng.choice(num_variants, size=num_causal_variants, replace=False))
+causal_weights = rng.normal(0,1,num_causal_variants)
+
+causal_weights_sorted, causal_indices_sorted = sort_by_abs_value(causal_weights,causal_indices)
+
+all_weights = np.zeros(num_variants)
+all_weights[causal_indices] = causal_weights
+```
+```{python}
+
 # generate phenotypes
+phenotypes_no_noise = parents_generations[-1] @ all_weights
+var_phenotypes = np.var(phenotypes_no_noise)
+std_phenotypes = np.std(phenotypes_no_noise)
+# unclear what is meant by "added random Gaussian noise equal to 20% of the total variance"
+phenotypes = phenotypes_no_noise + rng.normal(0,0.2*std_phenotypes,phenotypes_no_noise.shape[0])
+phenotypes = phenotypes_no_noise + rng.normal(0,np.sqrt(0.01*var_phenotypes),phenotypes_no_noise.shape[0])
+
+```
+
+```{python}
+_, bins, _ = plt.hist(phenotypes_no_noise, bins=20,label='Phenotypes without noise')
+
+plt.hist(phenotypes, bins=bins, alpha=0.5, label='with 20% additional variance')
+
+plt.title('Histogram of phenotype distribution')
+plt.legend()
+```
+
+Box plot for phenotype dependnce on strongest variant 
+```{python}
+
+i_strongest = causal_indices_sorted[-1]
+
+p1 = phenotypes[parents_generations[-1][:,i_strongest]==1]
+p0 = phenotypes[parents_generations[-1][:,i_strongest]==0]
+
+plt.boxplot([p1,p0])
+plt.title('Phenotype dependence on strongest marker')
+
+```
 
 
+```{python}
+# doesn't quite work as expected - to do with rows v columns?
+def vector_corr_np(data1, data2):
+    data1 = np.atleast_2d(data1)
+    data2 = np.atleast_2d(data2)
+    mean1 = data1.mean(axis=1) 
+    mean2 = data2.mean(axis=1)
+    std1 = data1.std(axis=1)
+    std2 = data2.std(axis=1)
+    corr = ((data1*data2).mean(axis=1)-mean1*mean2)/(std1*std2)
+    return corr
+```
+
+```{python}
+# test = vector_corr_np(parents_generations[-1], phenotypes)
+```
+
+```{python}
+# from scipy.stats import pearsonr
+
+pr = np.zeros(num_variants)
+lod1D = np.zeros(num_variants)
+for i in range(num_variants): 
+    pr[i] = np.corrcoef(parents_generations[-1][:,i],phenotypes)[0,1]
+    # pr[i] = pearsonr(parents_generations[-1][:,i],phenotypes)
+    lod1D[i] = -phenotypes.shape[0]*np.log(1-pr[i]**2)/(2*np.log(10))
+```
+
+```{python}
+plt.plot(range(num_variants),pr,label='all markers')
+plt.plot(causal_indices,pr[causal_indices],'xr',label='causal markers')
+plt.title("Pearson's correlation for each marker with phenotype")
+plt.legend()
+```
+
+```{python}
+plt.plot(range(num_variants),lod1D,label='all markers')
+plt.plot(causal_indices,lod1D[causal_indices],'xr',label='causal markers')
+plt.title("LOD score for each marker with phenotype")
+plt.legend()
 ```
