@@ -23,6 +23,7 @@ jupyter: python3
 ```{python}
 import numpy as np
 import matplotlib.pyplot as plt
+import scipy.io as sio
 ```
 
 ```{python}
@@ -280,5 +281,130 @@ plt.legend()
 plt.plot(range(num_variants),lod1D,label='all markers')
 plt.plot(causal_indices,lod1D[causal_indices],'xr',label='causal markers')
 plt.title("LOD score for each marker with phenotype")
+plt.legend()
+```
+
+# Working with the data
+
+## Load trait data
+
+```{python}
+sio.matlab.matfile_version('FWselection_dependencies/trait.mat')
+trait_contents = sio.matlab.loadmat('FWselection_dependencies/trait.mat')
+```
+
+`trait_contents` is a numpy array of size (1,64), each element is itself a 1x1152 numpy array of traits: 
+```{python}
+trait_contents['trait'].shape
+trait_contents['trait'][0,0].shape
+trait = np.squeeze(np.stack(np.squeeze(trait_contents['trait'])))
+```
+
+### Plot all the traits
+```{python}
+plt.plot(np.sort(trait).T,'*')
+```
+
+### Get the trait names
+
+```{python}
+sio.matlab.matfile_version('FWselection_dependencies/Previous Traits and Filename MAT/filename.mat')
+filename_contents = sio.matlab.loadmat('FWselection_dependencies/Previous Traits and Filename MAT/filename.mat')
+filename = np.squeeze(np.stack(np.squeeze(filename_contents['filename'])))
+```
+
+## Load genotype data
+
+```{python}
+sio.matlab.matfile_version('FWselection_dependencies/phasedGenotype.mat')
+phasedGenotype_contents = sio.matlab.loadmat('FWselection_dependencies/phasedGenotype.mat')
+phasedGenotype = phasedGenotype_contents['phasedGenotype']
+```
+
+
+## LOD scores for some phenotypes
+
+```{python}
+num_strains = phasedGenotype.shape[0]
+num_variants = phasedGenotype.shape[1]
+i_trait = 0
+i_trait = 32
+i_trait = 39
+
+pr = np.zeros(num_variants)
+lod1D = np.zeros(num_variants)
+for i in range(num_variants): 
+    pr[i] = np.corrcoef(phasedGenotype[:,i],trait[i_trait,])[0,1]
+    # pr[i] = pearsonr(parents_generations[-1][:,i],phenotypes)
+    lod1D[i] = -num_strains*np.log(1-pr[i]**2)/(2*np.log(10))
+```
+
+```{python}
+plt.plot(range(num_variants),lod1D,label='all markers')
+plt.title("LOD score with phenotype " + filename[i_trait])
+plt.xlabel('Marker number')
+plt.ylabel('LOD score')
+plt.legend()
+```
+
+
+
+## LOD scores for 5-FU
+
+```{python}
+num_strains = phasedGenotype.shape[0]
+num_variants = phasedGenotype.shape[1]
+i_trait = 0
+i_trait = 30
+# i_trait = 36
+
+pr = np.zeros(num_variants)
+lod1D = np.zeros(num_variants)
+for i in range(num_variants): 
+    pr[i] = np.corrcoef(phasedGenotype[:,i],trait[i_trait,])[0,1]
+    # pr[i] = pearsonr(parents_generations[-1][:,i],phenotypes)
+    lod1D[i] = -num_strains*np.log(1-pr[i]**2)/(2*np.log(10))
+```
+
+```{python}
+plt.plot(range(num_variants),lod1D,label='all markers')
+plt.title("LOD score with phenotype " + filename[i_trait])
+plt.xlabel('Marker number')
+plt.ylabel('LOD score')
+plt.legend()
+```
+
+
+# Do it again with different genotype data
+
+```{python}
+sio.matlab.matfile_version('FWselection_dependencies/phasedGenotype_preEmptyWells.mat')
+phasedGenotype_contents = sio.matlab.loadmat('FWselection_dependencies/phasedGenotype_preEmptyWells.mat')
+phasedGenotype = phasedGenotype_contents['phasedGenotype']
+```
+
+
+## LOD scores for some phenotypes
+
+```{python}
+num_strains = phasedGenotype.shape[0]
+num_variants = phasedGenotype.shape[1]
+i_trait = 0
+i_trait = 32
+# i_trait = 39
+
+pr = np.zeros(num_variants)
+lod1D = np.zeros(num_variants)
+for i in range(num_variants): 
+    pr[i] = np.corrcoef(phasedGenotype[:,i],trait[i_trait,])[0,1]
+    # pr[i] = pearsonr(parents_generations[-1][:,i],phenotypes)
+    lod1D[i] = -num_strains*np.log(1-pr[i]**2)/(2*np.log(10))
+```
+
+```{python}
+plt.plot(range(num_variants),lod1D,label='all markers')
+plt.title("LOD score with phenotype " + filename[i_trait])
+plt.xlabel('Marker number')
+plt.ylabel('LOD score')
 plt.legend()
 ```
