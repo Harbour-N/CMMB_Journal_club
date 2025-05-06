@@ -20,6 +20,8 @@ execute:
 jupyter: python3
 ---
 
+# Modelling yeast crosses
+
 ```{python}
 import numpy as np
 import matplotlib.pyplot as plt
@@ -29,6 +31,9 @@ import scipy.io as sio
 ```{python}
 rng = np.random.default_rng(1)
 ```
+
+## Define functions
+
 ```{python}
 
 # Parameters
@@ -123,6 +128,18 @@ def model_missing_genotypes(parents, mean_coverage_threshold):
     missing_genotypes = np.where(coverage < mean_coverage_threshold, np.nan, parents)
     return missing_genotypes
 
+```
+
+```{python}
+# https://stackoverflow.com/questions/1903462/how-can-i-zip-sort-parallel-numpy-arrays
+def sort_by_abs_value(s, p):
+    indexes = abs(s).argsort()
+    return s[indexes], p[indexes]
+```
+
+## Run a simulation
+
+```{python}
 # Simulate variants
 variants = simulate_variants(num_variants)
 
@@ -143,8 +160,10 @@ missing_genotypes = model_missing_genotypes(recombined_parents, mean_coverage_th
 # print("Recombined Parents Markers:\n", recombined_parents)
 # print("Missing Genotypes:\n", missing_genotypes)
 
-
 ```
+
+## Run another simulation, storing intermediate populations
+
 ```{python}
 
 recombination_rate = 0.2  # Recombination rate (recombinations per unit genome length)
@@ -189,12 +208,7 @@ ax.set_title('Final population')
 
 ```
 
-```{python}
-# https://stackoverflow.com/questions/1903462/how-can-i-zip-sort-parallel-numpy-arrays
-def sort_by_abs_value(s, p):
-    indexes = abs(s).argsort()
-    return s[indexes], p[indexes]
-```
+
 ```{python}
 
 # choose number of markers
@@ -321,58 +335,129 @@ phasedGenotype_contents = sio.matlab.loadmat('FWselection_dependencies/phasedGen
 phasedGenotype = phasedGenotype_contents['phasedGenotype']
 ```
 
-
-## LOD scores for some phenotypes
+Extract number of strains and variants (markers). 
 
 ```{python}
 num_strains = phasedGenotype.shape[0]
 num_variants = phasedGenotype.shape[1]
-i_trait = 0
-i_trait = 32
-i_trait = 39
 
-pr = np.zeros(num_variants)
-lod1D = np.zeros(num_variants)
-for i in range(num_variants): 
-    pr[i] = np.corrcoef(phasedGenotype[:,i],trait[i_trait,])[0,1]
-    # pr[i] = pearsonr(parents_generations[-1][:,i],phenotypes)
-    lod1D[i] = -num_strains*np.log(1-pr[i]**2)/(2*np.log(10))
+```
+
+## Load and process `variantPos`
+
+```{python}
+sio.matlab.matfile_version('FWselection_dependencies/variantPos.mat')
+variantPos_contents = sio.matlab.loadmat('FWselection_dependencies/variantPos.mat')
+variantPos = np.squeeze(np.stack(np.squeeze(variantPos_contents['variantPos'])))
+```
+
+
+Split `variantPos` into chromosome and position variables so that we can scan 10kb on either side of each causal variant
+```{python}
+allPos = np.zeros(num_variants)
+allChrom = np.zeros(num_variants)
+pos_start = 0
+for i in range(num_variants):
+    tempVar = variantPos[i].split(':')
+    allChrom[i] = int(tempVar[0].split('|')[1].split('_')[1])-1132
+    allPos[i] = int(tempVar[1])
+    if allChrom[i] == 92: 
+        allChrom[i] = 17 
+```
+
+## Choose a trait to analyse
+
+To find the index of a phenotype, e.g. Fluconazole, Tebuconazole: 
+
+```{python}
+def print_filename_indices(my_string):
+    print(my_string + ' appears in indexes ')
+    print(np.where(np.char.find(filename,my_string) > -1))
+    print('of "filename", as')
+    print(filename[np.where(np.char.find(filename,my_string) > -1)])
+    print()
+
+print_filename_indices('Fluc')
+
+print_filename_indices('Tebu')
+
 ```
 
 ```{python}
-plt.plot(range(num_variants),lod1D,label='all markers')
-plt.title("LOD score with phenotype " + filename[i_trait])
+
+##### In figure 2B 
+i_trait = 32 # '30h-Ketoconazole.txt'
+i_trait = 39 # '44h-Ketoconazole.txt'
+
+# i_trait = 1 # '36h-Fluconazole.txt'
+# i_trait = 3 # '43h-Fluconazole.txt'
+# i_trait = 5 # '58h-Fluconazole.txt'
+
+# i_trait = 33 # '30h-Tebuconazole.txt'
+# i_trait = 41 # '44h-Tebuconazole.txt'
+i_trait = 48 # '72h-Tebuconazole.txt'
+
+##### In figure 3A
+# i_trait = 30 # '30h-5FU.txt'
+# i_trait = 36 # '44h-5FU.txt' < peaks look wrong, big peak in Chr3
+# i_trait = 0 # '36h-CuSO4.txt'
+# i_trait = 8 # '74h-CuSO4.txt' < this one looks better than 36h
+```
+
+## Exclude wells that don't meet coverage threshold
+
+```{python}
+variantCalls = np.sum(abs(phasedGenotype),axis=0)
+s = np.sum(abs(phasedGenotype),axis=1)
+
+# Cutoff for number of variant calls needed to include a segregant.
+rowCutoff = 5500
+columnCutoff = 0
+
+traitRow = trait[i_trait,]
+# https://stackoverflow.com/questions/7820809/understanding-weird-boolean-2d-array-indexing-behavior-in-numpy
+x=phasedGenotype[(s>rowCutoff) & (traitRow != -1),:][:,variantCalls>columnCutoff]
+# Remove edge count and plateNorm from variant calls
+# variantCalls(1:13)=[];
+y=traitRow[(s>rowCutoff) & (traitRow != -1)]
+
+```
+
+```{python}
+# Normalize trait y to mean 0, variance 1
+y = y - np.mean(y);
+y = y/np.std(y);
+```
+
+```{python}
+pr = np.zeros(x.shape[1])
+lod1D = np.zeros(x.shape[1])
+for i in range(x.shape[1]): 
+    pr[i] = np.corrcoef(x[:,i],y)[0,1]
+    # pr[i] = pearsonr(parents_generations[-1][:,i],phenotypes)
+    lod1D[i] = -x.shape[0]*np.log(1-pr[i]**2)/(2*np.log(10))
+
+```
+
+```{python}
+i_start = 0
+for i in range(1,18):
+    i_chrom = np.where(allChrom==i)
+    tempPos = allPos[i_chrom] + i_start
+    plt.plot(tempPos,lod1D[i_chrom],label=['C' + str(i)],linewidth=0.5)
+    i_start = tempPos[-1]
+
+plt.title("LOD score with normalised phenotype " + filename[i_trait])
 plt.xlabel('Marker number')
 plt.ylabel('LOD score')
-plt.legend()
+# plt.legend()
 ```
+
+## LOD scores for some phenotypes
 
 
 
 ## LOD scores for 5-FU
-
-```{python}
-num_strains = phasedGenotype.shape[0]
-num_variants = phasedGenotype.shape[1]
-i_trait = 0
-i_trait = 30
-# i_trait = 36
-
-pr = np.zeros(num_variants)
-lod1D = np.zeros(num_variants)
-for i in range(num_variants): 
-    pr[i] = np.corrcoef(phasedGenotype[:,i],trait[i_trait,])[0,1]
-    # pr[i] = pearsonr(parents_generations[-1][:,i],phenotypes)
-    lod1D[i] = -num_strains*np.log(1-pr[i]**2)/(2*np.log(10))
-```
-
-```{python}
-plt.plot(range(num_variants),lod1D,label='all markers')
-plt.title("LOD score with phenotype " + filename[i_trait])
-plt.xlabel('Marker number')
-plt.ylabel('LOD score')
-plt.legend()
-```
 
 
 # Do it again with different genotype data
@@ -383,28 +468,112 @@ phasedGenotype_contents = sio.matlab.loadmat('FWselection_dependencies/phasedGen
 phasedGenotype = phasedGenotype_contents['phasedGenotype']
 ```
 
-
-## LOD scores for some phenotypes
-
 ```{python}
 num_strains = phasedGenotype.shape[0]
 num_variants = phasedGenotype.shape[1]
-i_trait = 0
-i_trait = 32
-# i_trait = 39
+```
+## Choose a trait to analyse
 
-pr = np.zeros(num_variants)
-lod1D = np.zeros(num_variants)
-for i in range(num_variants): 
-    pr[i] = np.corrcoef(phasedGenotype[:,i],trait[i_trait,])[0,1]
-    # pr[i] = pearsonr(parents_generations[-1][:,i],phenotypes)
-    lod1D[i] = -num_strains*np.log(1-pr[i]**2)/(2*np.log(10))
+```{python}
+##### In figure 2B 
+i_trait = 32 # '30h-Ketoconazole.txt'
+i_trait = 39 # '44h-Ketoconazole.txt'
+
+# i_trait = 1 # '36h-Fluconazole.txt'
+# i_trait = 3 # '43h-Fluconazole.txt'
+# i_trait = 5 # '58h-Fluconazole.txt'
+
+# i_trait = 33 # '30h-Tebuconazole.txt'
+# i_trait = 41 # '44h-Tebuconazole.txt'
+# i_trait = 48 # '72h-Tebuconazole.txt'
+
+##### In figure 3A
+# i_trait = 30 # '30h-5FU.txt'
+# i_trait = 36 # '44h-5FU.txt' < peaks look wrong, big peak in Chr3
+# i_trait = 0 # '36h-CuSO4.txt'
+# i_trait = 8 # '74h-CuSO4.txt' < this one looks better than 36h
+```
+
+## Exclude wells that don't meet coverage threshold
+
+```{python}
+variantCalls = np.sum(abs(phasedGenotype),axis=0)
+s = np.sum(abs(phasedGenotype),axis=1)
+
+# Cutoff for number of variant calls needed to include a segregant.
+rowCutoff = 5500
+columnCutoff = 0
+
+traitRow = trait[i_trait,]
+# https://stackoverflow.com/questions/7820809/understanding-weird-boolean-2d-array-indexing-behavior-in-numpy
+x=phasedGenotype[(s>rowCutoff) & (traitRow != -1),:][:,variantCalls>columnCutoff]
+# Remove edge count and plateNorm from variant calls
+# variantCalls(1:13)=[];
+y=traitRow[(s>rowCutoff) & (traitRow != -1)]
+
 ```
 
 ```{python}
-plt.plot(range(num_variants),lod1D,label='all markers')
-plt.title("LOD score with phenotype " + filename[i_trait])
+# Normalize trait y to mean 0, variance 1
+y = y - np.mean(y);
+y = y/np.std(y);
+```
+
+```{python}
+pr = np.zeros(x.shape[1])
+lod1D = np.zeros(x.shape[1])
+for i in range(x.shape[1]): 
+    pr[i] = np.corrcoef(x[:,i],y)[0,1]
+    # pr[i] = pearsonr(parents_generations[-1][:,i],phenotypes)
+    lod1D[i] = -x.shape[0]*np.log(1-pr[i]**2)/(2*np.log(10))
+
+```
+
+```{python}
+i_start = 0
+for i in range(1,18):
+    i_chrom = np.where(allChrom==i)
+    tempPos = allPos[i_chrom] + i_start
+    plt.plot(tempPos,lod1D[i_chrom],label=['C' + str(i)],linewidth=0.5)
+    i_start = tempPos[-1]
+
+plt.title("LOD, pre-empty wells geno and normalised phenotype " + filename[i_trait])
 plt.xlabel('Marker number')
 plt.ylabel('LOD score')
-plt.legend()
+# plt.legend()
+```
+
+# Azole responses
+
+> This standard analysis established a locus of strong effect on the right arm of Chromosome 4
+
+```{python}
+i_chrom = np.where(allChrom==4)
+tempPos = allPos[i_chrom]
+tempLOD = lod1D[i_chrom]
+
+plt.plot(tempPos,lod1D[i_chrom],label=['C' + str(i)],linewidth=0.5)
+
+plt.title("LOD, Chromosome 4 for " + filename[i_trait])
+plt.xlabel('Marker number')
+plt.ylabel('LOD score')
+# plt.legend()
+```
+
+Fig 2B inset is approx 230 kb of Chromosome 4. 
+```{python}
+i_chrom = np.where(allChrom==4)
+tempPos = allPos[i_chrom]
+tempLOD = lod1D[i_chrom]
+i_max = tempLOD.argmax()
+i_window = np.where(abs(tempPos-tempPos[i_max]) < 10000)
+
+plt.plot(tempPos,tempLOD,label=['C' + str(i)],linewidth=0.5)
+plt.plot(tempPos[i_window],tempLOD[i_window],label=['C' + str(i)],linewidth=0.5)
+
+plt.title("LOD, Chromosome 4 for " + filename[i_trait])
+plt.xlabel('Marker number')
+plt.ylabel('LOD score')
+plt.xlim((tempPos[i_max]-100000,tempPos[i_max]+100000))
+# plt.legend()
 ```
