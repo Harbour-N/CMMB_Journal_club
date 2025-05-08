@@ -24,17 +24,19 @@ Tutorial here: https://pytorch.org/tutorials/intermediate/reinforcement_q_learni
 
 import gymnasium as gym
 import gymnasium_env
-import math
+import numpy as np
 import random
 import matplotlib
 import matplotlib.pyplot as plt
 from collections import namedtuple, deque
 from itertools import count
+import pandas as pd
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+import torch.optim.lr_scheduler as lr_scheduler
 
 env = gym.make("gymnasium_env/tumor_model-v0")
 
@@ -53,26 +55,170 @@ device = torch.device(
 )
 
 
+N_col = 'black'
+S_col = 'green'
+R_col = 'red'
+x_max = 1100
+
+```
+
+
+
+# How to use the ENV
+
+We will run through some basic examples of how to use the gym env (without any learning)
+
+- action - means if treatment is on or off
+- observation - total tumor size
+- reward - is calulated according to our reward rules (see later).
+- terminated - if the tumor has grow to 120% then the simulation/episode is over
+- truncated - false
+- info - sensative and resistant population size (in a dictionary)
+
+```{python}
+
+# To start always reset the env
+state, info = env.reset()
+
+# The env contains the LV tumor model so we can use it simply to solve the LV equations
+# To solve the LV equation we can use the step function of the env class. This performs a single step of the LV equations (with dt = 1 (day)).
+# The step function takes an action as input. This is weather treatment is on or off.
+time_c = np.arange(0,750,14)
+N_c = np.zeros(len(time_c))
+S_c = np.zeros(len(time_c))
+R_c = np.zeros(len(time_c))
+ac_c = np.zeros(len(time_c))
+
+for i in range(len(time_c)):
+    action = 1
+    observation, reward, terminated, truncated, info = env.step(action)
+    N_c[i] = observation[0]
+    S_c[i] = info['sensative']
+    R_c[i] = info['resistant']
+    ac_c[i] = action
+
+    # Truncate the arrays to the length of the simulation
+    if terminated:
+        save_i_c = i
+        break
+
+# Truncate the arrays to the length of the simulation
+time_c = time_c[:save_i_c]
+N_c = N_c[:save_i_c]
+S_c = S_c[:save_i_c]
+R_c = R_c[:save_i_c]
+ac_c = ac_c[:save_i_c]
+
+# Save MTD survival
+MTD_surv = time_c[-1]
+
+
+plt.plot(time_c,N_c / state[0],color=N_col)
+plt.plot(time_c,S_c / state[0],color=S_col)
+plt.plot(time_c,R_c / state[0],color=R_col)
+
+plt.axhline(1.2, color = 'blue')
+
+plt.xlabel('Time (days)')
+plt.ylabel('Relative tumor size (PSA)')
+plt.title("Continuous treatment")
+plt.legend(['Tumor size','Sensative cells','Resistant cells'])
+plt.xlim(0, x_max)
+plt.ylim(0, 1.25)
+
+plt.show()
+
+```
+
+## Adaptive therapy
+
+We could implement an adaptive therapy schedule using this ENV as follows
+
+```{python}
+# To start always reset the env
+state, info = env.reset()
+
+time_AT = np.arange(0, 750, 14)
+N_AT = np.zeros(len(time_AT))
+S_AT = np.zeros(len(time_AT))
+R_AT = np.zeros(len(time_AT))
+ac_AT = np.zeros(len(time_AT))
+
+# Initial condition
+N_AT[0] = state[0]
+S_AT[0] = info['sensative']
+R_AT[0] = info['resistant']
+
+
+tr = 'on'  # treatment starts ON
+action = 1
+ac_AT[0] = action
+
+for i in range(1, len(time_AT)):
+    
+    # Once tumour has shrunk to 50% of its initial size, stop treatment.
+    if N_AT[i-1] / state[0] < 0.5:
+        action = 0
+        tr = 'off'
+    
+    # Once tumour has grown back to its original size, turn treatment back on
+    elif N_AT[i-1] / state[0] >= 1 and tr == 'off':
+        action = 1
+        tr = 'on'
+
+
+    observation, reward, terminated, truncated, info = env.step(action)
+    
+    N_AT[i] = observation[0]
+    S_AT[i] = info['sensative']
+    R_AT[i] = info['resistant']
+    ac_AT[i] = action
+
+    if terminated:
+        print('terminated')
+        save_i_AT = i + 1  # include final step
+        break
+
+
+# Truncate the arrays to the length of the simulation
+time_AT = time_AT[:save_i_AT]
+N_AT = N_AT[:save_i_AT]
+S_AT = S_AT[:save_i_AT]
+R_AT = R_AT[:save_i_AT]
+ac_AT = ac_AT[:save_i_AT]
+
+# Save AT50 survival
+AT50_surv = time_AT[-1]
+
+# Make plot
+plt.plot(time_AT,N_AT / state[0],color=N_col)
+plt.plot(time_AT,S_AT / state[0],color=S_col)
+plt.plot(time_AT,R_AT / state[0],color=R_col)
+
+plt.axhline(1.2, color = 'blue', linestyle='--')
+plt.axvline(MTD_surv, color = 'grey', linestyle='--')
+
+plt.xlabel('Time (days)')
+plt.ylabel('Relative tumor size (PSA)')
+plt.title("AT50 schedule")
+plt.legend(['Tumor size','Sensative cells','Resistant cells'])
+plt.xlim(0, x_max)
+plt.ylim(0, 1.25)
+plt.show()
 
 
 ```
 
 
-# Replay Memory
 
-We’ll be using experience replay memory for training our DQN. It stores the transitions that the agent observes, allowing us to reuse this data later. By sampling from it randomly, the transitions that build up a batch are decorrelated. It has been shown that this greatly stabilizes and improves the DQN training procedure.
+# DQN algorithm
 
-For this, we’re going to need two classes:
+Our environment is deterministic, so all equations presented here are also formulated deterministically for the sake of simplicity. In the reinforcement learning literature, they would also contain expectations over stochastic transitions in the environment.
 
-Transition - a named tuple representing a single transition in our environment. It essentially maps (state, action) pairs to their (next_state, reward) result, with the state being the screen difference image as described later on.
-ReplayMemory - a cyclic buffer of bounded size that holds the transitions observed recently. It also implements a .sample() method for selecting a random batch of transitions for training.
-
-
+## Replay memory
 ```{python}
-
 Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward'))
-
 
 class ReplayMemory(object):
 
@@ -88,20 +234,14 @@ class ReplayMemory(object):
 
     def __len__(self):
         return len(self.memory)
-
-
 ```
 
 
-# DQN algorithm
-
-Our environment is deterministic, so all equations presented here are also formulated deterministically for the sake of simplicity. In the reinforcement learning literature, they would also contain expectations over stochastic transitions in the environment.
-
-
-# Q network
+## Q network
 
 ```{python}
 
+# simple neural network structure we will use
 class DQN(nn.Module):
 
     def __init__(self, n_observations, n_actions):
@@ -117,18 +257,18 @@ class DQN(nn.Module):
         x = F.relu(self.layer2(x))
         return self.layer3(x)
 
+
 ```
 
+## Training
 
-
-# Training
-
-## Hyperparameters and utilities
+### Hyperparameters and utilities
 
 This cell instantiates our model and its optimizer, and defines some utilities:
 
-select_action - will select an action according to an epsilon greedy policy. Simply put, we’ll sometimes use our model for choosing the action, and sometimes we’ll just sample one uniformly. The probability of choosing a random action will start at EPS_START and will decay exponentially towards EPS_END. EPS_DECAY controls the rate of the decay.
-plot_durations - a helper for plotting the duration of episodes, along with an average over the last 100 episodes (the measure used in the official evaluations). The plot will be underneath the cell containing the main training loop, and will update after every episode.
+- select_action - will select an action according to an epsilon greedy policy. Simply put, we’ll sometimes use our model for choosing the action, and sometimes we’ll just sample one uniformly. The probability of choosing a random action will start at EPS_START and will decay exponentially towards EPS_END. 
+- EPS_DECAY controls the rate of the decay.
+- plot_durations - a helper for plotting the duration of episodes, along with an average over the last 100 episodes (the measure used in the official evaluations). The plot will be underneath the cell containing the main training loop, and will update after every episode.
 
 ```{python}
 # BATCH_SIZE is the number of transitions sampled from the replay buffer
@@ -141,10 +281,10 @@ plot_durations - a helper for plotting the duration of episodes, along with an a
 BATCH_SIZE = 128
 GAMMA = 0.99
 EPS_START = 0.9
-EPS_END = 0.05
-EPS_DECAY = 1000
+EPS_END = 0.01
+EPS_DECAY = 2500
 TAU = 0.005
-LR = 1e-4
+LR = 0.001
 
 # Get number of actions from gym action space
 n_actions = env.action_space.n
@@ -156,19 +296,26 @@ policy_net = DQN(n_observations, n_actions).to(device)
 target_net = DQN(n_observations, n_actions).to(device)
 target_net.load_state_dict(policy_net.state_dict())
 
+best_duration = 0  # or float('-inf')
+model_save_path = "best_model.pt"
+
 optimizer = optim.AdamW(policy_net.parameters(), lr=LR, amsgrad=True)
+
+# decay LR by gamma every step_size episodes
+scheduler = lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.75)
 memory = ReplayMemory(10000)
 
 
 steps_done = 0
 
-
-def select_action(state):
+def select_action(state, evaluate=False):
     global steps_done
     sample = random.random()
     eps_threshold = EPS_END + (EPS_START - EPS_END) * \
-        math.exp(-1. * steps_done / EPS_DECAY)
+        np.exp(-1. * steps_done / EPS_DECAY)
     steps_done += 1
+    if evaluate:
+        return policy_net(state).max(1).indices.view(1, 1)
     if sample > eps_threshold:
         with torch.no_grad():
             # t.max(1) will return the largest column value of each row.
@@ -179,41 +326,8 @@ def select_action(state):
         return torch.tensor([[env.action_space.sample()]], device=device, dtype=torch.long)
 
 
-episode_durations = []
 
 
-def plot_durations(show_result=False):
-    plt.figure(1)
-    durations_t = torch.tensor(episode_durations, dtype=torch.float)
-    if show_result:
-        plt.title('Result')
-    else:
-        plt.clf()
-        plt.title('Training...')
-    plt.xlabel('Episode')
-    plt.ylabel('Duration')
-    plt.plot(durations_t.numpy())
-    # Take 100 episode averages and plot them too
-    if len(durations_t) >= 100:
-        means = durations_t.unfold(0, 100, 1).mean(1).view(-1)
-        means = torch.cat((torch.zeros(99), means))
-        plt.plot(means.numpy())
-
-    #plt.pause(1)  # pause a bit so that plots are updated
-    if is_ipython:
-        if not show_result:
-            display.display(plt.gcf())
-            display.clear_output(wait=True)
-        else:
-            display.display(plt.gcf())
-
-
-def plot_tumor()
-    plt.figure()
-    plt.plot(N_save)
-    plt.plot(s_save)
-    plt.plot(r_save)
-    plt.show()
 
 
 ```
@@ -230,7 +344,7 @@ for added stability. The target network is updated at every step with a soft upd
 ```{python}
 
 def optimize_model():
-    if len(memory) < BATCH_SIZE:
+    if len(memory) < BATCH_SIZE*4:
         return
     transitions = memory.sample(BATCH_SIZE)
     # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
@@ -260,7 +374,9 @@ def optimize_model():
     # state value or 0 in case the state was final.
     next_state_values = torch.zeros(BATCH_SIZE, device=device)
     with torch.no_grad():
-        next_state_values[non_final_mask] = target_net(non_final_next_states).max(1).values
+        next_state_actions = policy_net(non_final_next_states).max(1).indices.unsqueeze(1)
+        next_state_values[non_final_mask] = target_net(non_final_next_states).gather(1, next_state_actions).squeeze(1)
+
     # Compute the expected Q values
     expected_state_action_values = (next_state_values * GAMMA) + reward_batch
 
@@ -277,32 +393,54 @@ def optimize_model():
 
 ```
 
+Moving averge for plotting
+```{python}
+def moving_average(a, n=5):
+    ret = np.cumsum(a, dtype=float)
+    ret[n:] = ret[n:] - ret[:-n]
+    return ret[n - 1:] / n
 
-Below, you can find the main training loop. At the beginning we reset the environment and obtain the initial state Tensor. Then, we sample an action, execute it, observe the next state and the reward (always 1), and optimize our model once. When the episode ends (our model fails), we restart the loop.
 
-Below, num_episodes is set to 600 if a GPU is available, otherwise 50 episodes are scheduled so training does not take too long. However, 50 episodes is insufficient for to observe good performance on CartPole. You should see the model constantly achieve 500 steps within 600 training episodes. Training RL agents can be a noisy process, so restarting training can produce better results if convergence is not observed.
+```
 
+
+Below, you can find the main training loop. At the beginning we reset the environment and obtain the initial state Tensor. Then, we perfrom a full episode of the environment, storing all transitions in a list. At the end of the episode, we compute the Monte Carlo returns for all transitions and use them to compute the loss. The loss is then used to optimize the model.
+
+DQN can have catestrophic failure so we must have a decaying learning rate: https://ai.stackexchange.com/questions/28079/deep-q-learning-catastrophic-drop-reasons 
 
 ```{python}
 
-if torch.cuda.is_available() or torch.backends.mps.is_available():
-    num_episodes = 100
-else:
-    num_episodes = 50
+flag = 1
+num_episodes = 750
+episode_durations = np.zeros(num_episodes)
+
+N_save = []
+S_save = []
+R_save = []
+time_AI_save = []
 
 for i_episode in range(num_episodes):
-    print(f'Episode {i_episode / num_episodes * 100:.2f}%')
+    if i_episode % 10 == 0:
+        print(f'Episode {i_episode / num_episodes * 100:.2f}%')
     # Initialize the environment and get its state
     state, info = env.reset()
-    #state = state['agent']
-    #state = np.array([state])
     state = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
+
+    # List to store all transitions for the current episode
+    N = []
+    S = []
+    R = []
+    N.append(np.array(state[0].item()))
+    S.append(info['sensative'])
+    R.append(info['resistant'])
+    time_AI = np.arange(0, 2000, 14)
     for t in count():
         action = select_action(state)
-        observation, reward, terminated, truncated, _ = env.step(action.item())
-        #observation = observation['agent']
-        #observation = np.array([observation])
+        observation, reward, terminated, truncated, info = env.step(action.item())
         reward = torch.tensor([reward], device=device)
+        N.append(observation[0])
+        S.append(info['sensative'])
+        R.append(info['resistant'])
         done = terminated or truncated
 
         if terminated:
@@ -318,6 +456,12 @@ for i_episode in range(num_episodes):
 
         # Perform one step of the optimization (on the policy network)
         optimize_model()
+        # If moving average is above 750 then update the target network
+        if i_episode > 30:
+            if moving_average(episode_durations[:i_episode] * 14)[-1] > 750 or flag == 0:
+
+                flag = 0 # Once it goes above 750 we set flag to 0 so that we always reduce the lr
+                scheduler.step()
 
         # Soft update of the target network's weights
         # θ′ ← τ θ + (1 −τ )θ′
@@ -328,14 +472,153 @@ for i_episode in range(num_episodes):
         target_net.load_state_dict(target_net_state_dict)
 
         if done:
-            episode_durations.append(t + 1)
-            plot_durations()
+            episode_durations[i_episode] = t + 1
+            # save if this is the best so far
+            if episode_durations[i_episode] > best_duration:
+                best_duration = episode_durations[i_episode]
+                torch.save(policy_net.state_dict(), model_save_path)
+
+
+            # At the end of each episode plot the simulation for visualization
+            if i_episode % 1 == 0:
+
+                time_AI = time_AI[:t+2]
+                N_save.append(N)
+                S_save.append(S)
+                R_save.append(R)
+                time_AI_save.append(time_AI)
+
+                '''
+                plt.plot(time_AI,N / N[0], color=N_col)
+                plt.plot(time_AI,S / N[0], color=S_col)
+                plt.plot(time_AI,R / N[0], color=R_col)
+
+                plt.axhline(1.2, color='blue', linestyle='--')
+                plt.axvline(MTD_surv, color='grey', linestyle='--')
+                plt.axvline(AT50_surv, color='orange', linestyle='--')
+
+                plt.xlabel('Time (days)')
+                plt.ylabel('Relative tumor size (PSA)')
+                plt.title(f"Episode: {i_episode}")
+                plt.legend(['Tumor size', 'Sensitive cells', 'Resistant cells'])
+                plt.xlim(0, x_max)
+                plt.ylim(0, 1.25)
+                plt.tight_layout()
+                plt.savefig('Ims_learning/episode_' + str(i_episode) + '.png')
+                plt.show()
+                '''
+                '''
+                # Sub plot with simulation and episode duration
+                fig, ax = plt.subplots(1, 2, figsize=(15, 8))
+
+                # First plot is the model simulation
+                ax[0].plot(time_AI, N / N[0], color=N_col)
+                ax[0].plot(time_AI, S / N[0], color=S_col)
+                ax[0].plot(time_AI, R / N[0], color=R_col)
+                ax[0].axhline(1.2, color='blue', linestyle='--')
+                ax[0].axvline(MTD_surv, color='grey', linestyle='--')
+                ax[0].axvline(AT50_surv, color='orange', linestyle='--')
+                ax[0].set_ylabel('Relative tumor size (PSA)')
+                ax[0].set_title(f"Episode: {i_episode}")
+                ax[0].legend(['Tumor size', 'Sensitive cells', 'Resistant cells'])
+                ax[0].set_xlim(0, x_max)
+                ax[0].set_ylim(0, 1.25)
+
+                # Second plot is the episode duration
+                ax[1].plot(episode_durations[:i_episode] * 14)
+                ax[1].plot(moving_average(episode_durations[:i_episode] * 14, 10), color='red')
+                ax[1].axhline(MTD_surv, color='grey', linestyle='--')
+                ax[1].axhline(AT50_surv, color='orange', linestyle='--')
+                ax[1].set_xlabel('Episode')
+                ax[1].set_ylabel('Duration (days)')
+                ax[1].set_title("Model training")
+                ax[1].set_xlim(0, num_episodes)
+                ax[1].set_ylim(0, 2000)
+                plt.tight_layout()
+                plt.savefig(f'Ims_plotting/episode_{i_episode:04d}_dur.png')
+                plt.show()
+                plt.close(fig) 
+                '''
+
             break
 
 print('Complete')
-plot_durations(show_result=True)
-plt.ioff()
+
+
+```
+
+To see if we have done enough training we can plot the episode durations. This should be increasing as the model learns to control the tumor size.
+```{python}
+
+plt.plot(episode_durations*14)
+plt.axhline(MTD_surv, color='grey', linestyle='--')
+plt.axhline(AT50_surv, color='orange', linestyle='--')
+plt.title("Model training")
+plt.xlabel('Episode')
+plt.ylabel('Duration')
+
 plt.show()
+
+# save the episode durations to csv for plotting later
+df = pd.DataFrame(episode_durations)
+df.to_csv('episode_durations.csv', index=False, header=False)
+
+```
+
+Plot the results in a way I can control / modify after the fact
+
+```{python}
+
+curtail = 400
+fontsize = 20
+lw1 = 2.5
+
+for i in range(len(N_save)-curtail):
+    N = N_save[i]
+    S = S_save[i]
+    R = R_save[i]
+    time_AI = time_AI_save[i]
+
+    # Truncate arrays
+    time_AI = time_AI[:len(N)]
+    N = N[:len(N)]
+    S = S[:len(N)]
+    R = R[:len(N)]
+    # Sub plot with simulation and episode duration
+    fig, ax = plt.subplots(1, 2, figsize=(15, 8))
+
+    # First plot is the model simulation
+    ax[0].plot(time_AI, N / N[0], color=N_col,linewidth=lw1)
+    ax[0].plot(time_AI, S / N[0], color=S_col,linewidth=lw1)
+    ax[0].plot(time_AI, R / N[0], color=R_col,linewidth=lw1)
+    ax[0].axhline(1.2, color='blue', linestyle='--',linewidth=lw1)
+    ax[0].axvline(MTD_surv, color='grey', linestyle='--',linewidth = lw1)
+    ax[0].axvline(AT50_surv, color='orange', linestyle='--',linewidth = lw1)
+    ax[0].set_ylabel('Relative tumor size (PSA)', fontsize=fontsize)
+    ax[0].set_title(f"Episode: {i}", fontsize=fontsize)
+    ax[0].legend(['Tumor size', 'Sensitive cells', 'Resistant cells'], fontsize=15,loc= 'lower right')
+    ax[0].set_xlim(0, x_max)
+    ax[0].set_ylim(0, 1.25)
+    ax[0].set_yticks([0, 0.25, 0.5, 0.75, 1, 1.2])
+    ax[0].set_yticklabels(['0%','25%', '50%','75%','100%','120%'], fontsize=fontsize)
+    ax[0].tick_params(axis='both', which='major', labelsize=fontsize)
+
+    # Second plot is the episode duration
+    ax[1].plot(episode_durations[:i] * 14, linewidth=lw1)
+    ax[1].plot(moving_average(episode_durations[:i] * 14, 10), color='red',linewidth=lw1)
+    ax[1].axhline(MTD_surv, color='grey', linestyle='--',linewidth = lw1)
+    ax[1].axhline(AT50_surv, color='orange', linestyle='--',linewidth = lw1)
+    ax[1].set_xlabel('Episode', fontsize=fontsize)
+    ax[1].set_ylabel('Duration (days)', fontsize=fontsize)
+    ax[1].set_title("Model training", fontsize=fontsize)
+    ax[1].set_xlim(0, num_episodes-curtail)
+    ax[1].set_ylim(0, 1100)
+    ax[1].tick_params(axis='both', which='major', labelsize=fontsize)
+    plt.tight_layout()
+    plt.savefig(f'Ims_plotting/episode_{i:04d}_dur.png')
+    plt.show()
+
+
 
 ```
 
@@ -343,38 +626,64 @@ plt.show()
 Now that we have trained the network show a simulation
 
 ```{python}
+# --- Load best model before running a deterministic example ---
+policy_net.load_state_dict(torch.load("best_model.pt"))
+policy_net.eval()
 
+# --- Run one post-training simulation ---
 state, info = env.reset()
 state = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
 
-N_save = []
-s_save = []
-r_save = []
-a_save = []
+time_save = np.arange(0, 8050, 14)
+N_save = np.zeros(len(time_save))
+S_save = np.zeros(len(time_save))
+R_save = np.zeros(len(time_save))
+a_save = np.zeros(len(time_save))
 
-for t in range(20000):
-    action = select_action(state)
-    observation, reward, terminated, truncated, _ = env.step(action.item())
-    s_save.append(_['sensative'])
-    r_save.append(_['resistant'])
+for i in range(len(time_save)):
+    action = select_action(state, evaluate=True)  # always use best action
+    observation, reward, terminated, truncated, info = env.step(action.item())
+
+    N_save[i] = observation[0]
+    S_save[i] = info['sensative'] 
+    R_save[i] = info['resistant']
+    a_save[i] = action.item()
+    print('-----')
+    print(N_save[i])
+    print(terminated)
+    print('------')
     if terminated:
-        next_state = None
+        save_i = i + 1
         break
-    next_state = torch.tensor(observation, dtype=torch.float32, device=device).unsqueeze(0)
-    state = next_state  
-    a_save.append(action.item())
-    N_save.append(observation[0])  
 
+    state = torch.tensor(observation, dtype=torch.float32, device=device).unsqueeze(0)
 
-plt.figure()
-plt.plot(N_save)
-plt.plot(s_save)
-plt.plot(r_save)
-#plt.plot(a_save)
-plt.show()
+# Truncate arrays
+time_save = time_save[:save_i]
+N_save = N_save[:save_i]
+S_save = S_save[:save_i]
+R_save = R_save[:save_i]
+a_save = a_save[:save_i]
 
-plt.plot(a_save)
+# Plot
+plt.plot(time_save, N_save / 0.75, color=N_col)
+plt.plot(time_save, S_save / 0.75, color=S_col)
+plt.plot(time_save, R_save /0.75, color=R_col)
+
+plt.axhline(1.2, color='blue', linestyle='--')
+plt.axvline(MTD_surv, color='grey', linestyle='--')
+plt.axvline(AT50_surv, color='orange', linestyle='--')
+
+plt.xlabel('Time (days)')
+plt.ylabel('Relative tumor size (PSA)')
+plt.title("RL schedule (best model)")
+plt.legend(['Tumor size', 'Sensative cells', 'Resistant cells'])
+plt.xlim(0, x_max)
 plt.show()
 
 
 ```
+
+
+
+

@@ -1,0 +1,281 @@
+---
+title: Plots for Pint of science
+  - name: Nicholas Harbour
+format: 
+  html:
+    embed-resources: true
+    code-fold: true
+    number-sections: true
+    toc: true
+    toc-depth: 3
+    date-modified: last-modified
+    date-format: "MMMM DD, YYYY, HH:mm:ss"
+jupyter: python3
+---
+
+
+
+
+```{python}
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from PIL import Image
+
+import gymnasium as gym
+import gymnasium_env
+env = gym.make("gymnasium_env/tumor_model-v0")
+
+N_col = 'black'
+S_col = 'green'
+R_col = 'red'
+x_max = 1350
+
+```
+
+
+
+
+
+
+
+# Lets use the ENV to make some basic plots
+
+```{python}
+
+# To start always reset the env
+state, info = env.reset()
+
+# The env contains the LV tumor model so we can use it simply to solve the LV equations
+# To solve the LV equation we can use the step function of the env class. This performs a single step of the LV equations (with dt = 1 (day)).
+# The step function takes an action as input. This is weather treatment is on or off.
+time_c = np.arange(0,750,14)
+N_c = np.zeros(len(time_c))
+S_c = np.zeros(len(time_c))
+R_c = np.zeros(len(time_c))
+ac_c = np.zeros(len(time_c))
+
+for i in range(len(time_c)):
+    action = 1
+    observation, reward, terminated, truncated, info = env.step(action)
+    N_c[i] = observation[0]
+    S_c[i] = info['sensative']
+    R_c[i] = info['resistant']
+    ac_c[i] = action
+
+    # Truncate the arrays to the length of the simulation
+    if terminated:
+        save_i_c = i
+        break
+
+# Truncate the arrays to the length of the simulation
+time_c = time_c[:save_i_c]
+N_c = N_c[:save_i_c]
+S_c = S_c[:save_i_c]
+R_c = R_c[:save_i_c]
+ac_c = ac_c[:save_i_c]
+
+# Save MTD survival
+MTD_surv = time_c[-1]
+
+
+plt.plot(time_c,N_c / state[0],color=N_col)
+plt.plot(time_c,S_c / state[0],color=S_col)
+plt.plot(time_c,R_c / state[0],color=R_col)
+
+plt.axhline(1.2, color = 'blue')
+
+plt.xlabel('Time (days)')
+plt.ylabel('Relative tumor size (PSA)')
+plt.title("Continuous treatment")
+plt.legend(['Tumor size','Sensative cells','Resistant cells'])
+plt.xlim(0, x_max)
+plt.ylim(0, 1.25)
+
+plt.show()
+
+```
+
+## Adaptive therapy
+
+We could implement an adaptive therapy schedule using this ENV as follows
+
+```{python}
+# To start always reset the env
+state, info = env.reset()
+
+time_AT = np.arange(0, 750, 14)
+N_AT = np.zeros(len(time_AT))
+S_AT = np.zeros(len(time_AT))
+R_AT = np.zeros(len(time_AT))
+ac_AT = np.zeros(len(time_AT))
+
+# Initial condition
+N_AT[0] = state[0]
+S_AT[0] = info['sensative']
+R_AT[0] = info['resistant']
+
+
+tr = 'on'  # treatment starts ON
+action = 1
+ac_AT[0] = action
+
+for i in range(1, len(time_AT)):
+    
+    # Once tumour has shrunk to 50% of its initial size, stop treatment.
+    if N_AT[i-1] / state[0] < 0.5:
+        action = 0
+        tr = 'off'
+    
+    # Once tumour has grown back to its original size, turn treatment back on
+    elif N_AT[i-1] / state[0] >= 1 and tr == 'off':
+        action = 1
+        tr = 'on'
+
+
+    observation, reward, terminated, truncated, info = env.step(action)
+    
+    N_AT[i] = observation[0]
+    S_AT[i] = info['sensative']
+    R_AT[i] = info['resistant']
+    ac_AT[i] = action
+
+    if terminated:
+        print('terminated')
+        save_i_AT = i + 1  # include final step
+        break
+
+
+# Truncate the arrays to the length of the simulation
+time_AT = time_AT[:save_i_AT]
+N_AT = N_AT[:save_i_AT]
+S_AT = S_AT[:save_i_AT]
+R_AT = R_AT[:save_i_AT]
+ac_AT = ac_AT[:save_i_AT]
+
+# Save AT50 survival
+AT50_surv = time_AT[-1]
+
+# Make plot
+plt.plot(time_AT,N_AT / state[0],color=N_col)
+plt.plot(time_AT,S_AT / state[0],color=S_col)
+plt.plot(time_AT,R_AT / state[0],color=R_col)
+
+plt.axhline(1.2, color = 'blue', linestyle='--')
+plt.axvline(MTD_surv, color = 'grey', linestyle='--')
+
+plt.xlabel('Time (days)')
+plt.ylabel('Relative tumor size (PSA)')
+plt.title("AT50 schedule")
+plt.legend(['Tumor size','Sensative cells','Resistant cells'])
+plt.xlim(0, x_max)
+plt.ylim(0, 1.25)
+plt.show()
+
+
+```
+
+
+
+
+
+
+
+# Episode durations
+
+```{python}
+
+# Load the episode durations data
+episode_durations = pd.read_csv('episode_durations.csv')
+
+```
+
+```{python}
+episode_durations = episode_durations * 14
+episode_durations = np.squeeze(np.array(episode_durations))
+
+# Clip the last few etries to remove the last episode
+episode_durations = episode_durations[:-145]
+
+```
+
+Rolling mean function: https://stackoverflow.com/questions/14313510/how-to-calculate-rolling-moving-average-using-python-numpy-scipy
+```{python}
+
+def moving_average(a, n=3):
+    ret = np.cumsum(a, dtype=float)
+    ret[n:] = ret[n:] - ret[:-n]
+    return ret[n - 1:] / n
+
+```
+
+
+```{python}
+
+plt.plot(episode_durations)
+plt.plot(moving_average(episode_durations, 10), color='red', label='10 episode rolling mean')
+plt.axhline(MTD_surv, color='grey', linestyle='--')
+plt.axhline(AT50_surv, color='orange', linestyle='--')
+
+plt.xlabel('Episode Number')
+plt.ylabel('Episode duration (days)')
+plt.title('Model Training')
+
+plt.show()
+
+```
+
+
+
+# Make a animation of the training process
+
+
+```{python}
+
+
+def create_gif_from_folder(folder_name, output_gif="output.gif", fps=5, loop=0):
+    """
+    Create a GIF from all image files in a folder.
+
+    Parameters:
+    - folder_name (str): Path to the folder containing image files.
+    - output_gif (str): Filename for the output GIF.
+    - fps (int): Frames per second.
+    - loop (int): Number of times the GIF should loop (0 = infinite).
+    """
+
+    # Get full sorted list of image files
+    image_extensions = ('.png', '.jpg', '.jpeg')
+    image_files = sorted([
+        os.path.join(folder_name, f)
+        for f in os.listdir(folder_name)
+        if f.lower().endswith(image_extensions)
+    ])
+
+    if not image_files:
+        raise FileNotFoundError(f"No image files found in folder: {folder_name}")
+
+    # Open all images
+    frames = [Image.open(img) for img in image_files]
+
+    frames[0].save(
+        output_gif,
+        format='GIF',
+        save_all=True,
+        append_images=frames[1:],
+        duration=int(1000 / fps),
+        loop=loop
+    )
+
+    print(f"GIF saved as {output_gif}")
+
+```
+
+```{python}
+folder = 'Ims_plotting'
+output_gif = 'training.gif'
+create_gif_from_folder(folder, output_gif, fps=5, loop=0)
+
+
+```

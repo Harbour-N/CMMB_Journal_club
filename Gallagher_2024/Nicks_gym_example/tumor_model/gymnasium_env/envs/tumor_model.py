@@ -13,7 +13,7 @@ class Actions(Enum):
 class tumor_model(gym.Env):
     # metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
-    def __init__(self, render_mode=None,s = 0.74, r = 0.01, r_s = 0.027, r_r_mult = 1, d_s = 0, d_r = 0, d_D = 1.5, k = 1, term_thresh = 1.2, s0 = 0.74, r0 = 0.01, N0 = 0.75, dt = 0.1):
+    def __init__(self, render_mode=None,s = 0.74, r = 0.01, r_s = 0.035, r_r_mult = 0.54, d_s = 0.001*0.035, d_r = 0.001*0.035, d_D = 1.5, k = 1, term_thresh = 1.2, s0 = 0.74, r0 = 0.01, N0 = 0.75, dt = 1,freq=14):
 
         # Define model parameters
         self.s = s # Sensative cells
@@ -30,6 +30,9 @@ class tumor_model(gym.Env):
         self.r0 = r0 # Initial number of resistant cells
         self.N0 = N0
         self.dt = dt # Time step
+        self.time = 0 # keep track of number of time steps
+        self.reward = 0 # Keep track of reward for each step
+        self.freq = freq # Frequency of treatment
 
 
 
@@ -86,6 +89,8 @@ class tumor_model(gym.Env):
         self.s = self.s0
         self.r = self.r0
         self.N = self.s0 + self.r0
+        self.time = 0
+        self.reward = 0
 
         # get the observation and info at initial state
         observation = self._get_obs()
@@ -100,19 +105,47 @@ class tumor_model(gym.Env):
         # Map the action (element of {0,1,2,3}) to the direction we walk in
         treatment = self._action_to_direction[action]
 
-        # Update the tumor size based on LV model
-        self.s = self.s + self.dt * (self.r_s*self.s*(1- (self.s + self.r)/self.k) * (1 - self.d_D*treatment) - self.d_s*self.s )
-        self.r = self.r + self.dt * ( self.r_r*self.r*(1-(self.s + self.r)/self.k) - self.d_r*self.r )
-        self.N = self.s + self.r
+        for i in range(self.freq):
+            # Update the tumor size based on LV model
+            self.s = self.s + self.dt * (self.r_s*self.s*(1- (self.s + self.r)/self.k) * (1 - self.d_D*treatment) - self.d_s*self.s )
+            self.r = self.r + self.dt * ( self.r_r*self.r*(1-(self.s + self.r)/self.k) - self.d_r*self.r )
+            self.N = self.s + self.r
+            self.time = self.time + self.dt
 
 
         # An episode is done if the agent has reached the target size (1.2*N0)
         terminated = self.N >= self.term_thresh*self.N0
         #print(f"Tumor size: {self.N}, Treatment: {treatment}")   
         # reward for each step below threshold is 0.1
-        reward = 0.1 if not terminated else 0  # Binary sparse rewards
+        reward = 0
+        if not terminated:
+            reward = reward + 0.1
+        else:
+            reward = reward - 100
+        
+        # Reward treatment holidays / limit total amount of drug
+        if treatment == 0:
+            reward = reward + 1
+
+
+        if terminated ==0 and self.time >= 610:
+            reward = reward + 900
+        
+        if terminated == 0 and self.time >= 700:
+            reward = reward + 60
+        
+        if terminated == 0 and self.time >= 800:
+            reward = reward + 70
+
+        reward = reward +  (self.time / 100) ** 5  # Gradual increase of reward over time
+
+        # large penalty to discourage not treating at the start as this trivially gives poor survial
+        if self.time < 28 and treatment == 0:
+            reward = reward - 500
+       
         observation = self._get_obs()
         info = self._get_info()
+
 
         #if self.render_mode == "human":
         #    self._render_frame()
