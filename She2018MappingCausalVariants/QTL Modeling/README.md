@@ -14,9 +14,10 @@ ISSN 0092-8674,
 Table of files in the folder: 
 
 |DD|MMM|YYYY|filename|info|
+|--|---|----|--------|----|
 |21|Mar|2016|fQTL.sbatch|run fQTLmodel_timer.m with pSites and noise from input arguments|
 | 6|Sep|2016|fQTL_082616.sbatch|run fQTLmodel_timer.m with nSites and nSegregants from input arguments|
-| 6|Sep|2016|fQTL_082616_long.sbatch|same at fQTL_082616.sbatch with fewer trials and higher RR (recombination rate?)|
+| 6|Sep|2016|fQTL_082616_long.sbatch|same as fQTL_082616.sbatch with fewer trials and higher RR (recombination rate?)|
 | 4|Oct|2016|fQTL_finemapping_090616_F6yeast.sbatch||
 |30|Sep|2016|fQTL_finemapping_092416_mouse.sbatch||
 | 1|Oct|2016|fQTL_finemapping_092816_F1yeast.sbatch||
