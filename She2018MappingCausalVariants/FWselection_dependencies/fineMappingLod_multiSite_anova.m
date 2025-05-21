@@ -1,7 +1,26 @@
 function [p_anova,pairwise_p,ph1,ph2] = fineMappingLod_multiSite_anova(pos1,pos2,lower,upper,queryPos,x,y,b_fwselection,residual)
+% fineMappingLod_multiSite_anova 
+%   pos1 - genetic position of the first variant
+%   pos2 - genetic position of the second variant
+%   lower - not used
+%   upper - not used
+%   queryPos - genetic position of the QTL peak
+%   x - genotype data
+%   y - trait data
+%   b_fwselection - vector of coefficients returned by STEPWISEFIT
+%   residual - residuals from a fit using REGRESS of trait data to selected variants
+%
+% OUTPUTS
+%   p_anova - 
+%   pairwise_p - 
+%   ph1 - 
+%   ph2 - 
+
 yr = residual;
 yr = yr + b_fwselection(queryPos)*x(:,queryPos);
 
+% YJM: clinical strain, YJM975alpha, -1
+% RM:  wine strain, RM-11a, +1
 groupNames = {'YJM/YJM','YJM/RM','RM/YJM','RM/RM'};
 groupAssignments{1} = x(:,pos1)==-1 & x(:,pos2) == -1;
 groupAssignments{2} = x(:,pos1)==-1 & x(:,pos2) == 1;
