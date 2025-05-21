@@ -25,6 +25,7 @@ jupyter: python3
 ```{python}
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 import scipy.io as sio
 ```
 
@@ -135,6 +136,9 @@ def model_missing_genotypes(parents, mean_coverage_threshold):
 def sort_by_abs_value(s, p):
     indexes = abs(s).argsort()
     return s[indexes], p[indexes]
+
+def y_sem(y):
+    return np.std(y,ddof=1)/np.sqrt(len(y))
 ```
 
 ## Run a simulation
@@ -300,7 +304,7 @@ plt.legend()
 
 # Working with the data
 
-## Load trait data
+## Load trait data
 
 ```{python}
 sio.matlab.matfile_version('FWselection_dependencies/trait.mat')
@@ -317,6 +321,8 @@ trait = np.squeeze(np.stack(np.squeeze(trait_contents['trait'])))
 ### Plot all the traits
 ```{python}
 plt.plot(np.sort(trait).T,'*')
+plt.xlabel('Strains')
+plt.ylabel('Relative growth')
 ```
 
 ### Get the trait names
@@ -376,18 +382,18 @@ def print_filename_indices(my_string):
     print('of "filename", as')
     print(filename[np.where(np.char.find(filename,my_string) > -1)])
     print()
+```
 
+```{python}
 print_filename_indices('Fluc')
-
 print_filename_indices('Tebu')
-
 ```
 
 ```{python}
 
 ##### In figure 2B 
 i_trait = 32 # '30h-Ketoconazole.txt'
-i_trait = 39 # '44h-Ketoconazole.txt'
+# i_trait = 39 # '44h-Ketoconazole.txt'
 
 # i_trait = 1 # '36h-Fluconazole.txt'
 # i_trait = 3 # '43h-Fluconazole.txt'
@@ -395,7 +401,7 @@ i_trait = 39 # '44h-Ketoconazole.txt'
 
 # i_trait = 33 # '30h-Tebuconazole.txt'
 # i_trait = 41 # '44h-Tebuconazole.txt'
-i_trait = 48 # '72h-Tebuconazole.txt'
+# i_trait = 48 # '72h-Tebuconazole.txt'
 
 ##### In figure 3A
 # i_trait = 30 # '30h-5FU.txt'
@@ -425,8 +431,8 @@ y=traitRow[(s>rowCutoff) & (traitRow != -1)]
 
 ```{python}
 # Normalize trait y to mean 0, variance 1
-y = y - np.mean(y);
-y = y/np.std(y);
+y = y - np.mean(y)
+y = y/np.std(y,ddof=1) # unbiased estimate, unlike MATLAB which does that by default
 ```
 
 ```{python}
@@ -453,11 +459,279 @@ plt.ylabel('LOD score')
 # plt.legend()
 ```
 
-## LOD scores for some phenotypes
+# Azole responses
+
+> This standard analysis established a locus of strong effect on the right arm of Chromosome 4
+
+```{python}
+i_chrom = np.where(allChrom==4)
+tempPos = allPos[i_chrom]
+tempLOD = lod1D[i_chrom]
+
+plt.plot(tempPos,lod1D[i_chrom],label=['C' + str(i)],linewidth=0.5)
+
+plt.title("LOD, Chromosome 4 for " + filename[i_trait])
+plt.xlabel('Marker number')
+plt.ylabel('LOD score')
+# plt.legend()
+```
+
+Fig 2B inset is approx 230 kb of Chromosome 4. 
+```{python}
+i_chrom = np.where(allChrom==4)
+tempPos = allPos[i_chrom]
+tempLOD = lod1D[i_chrom]
+i_max = tempLOD.argmax()
+i_window = np.where(abs(tempPos-tempPos[i_max]) < 10000)
+
+plt.plot(tempPos,tempLOD,label=['C' + str(i)],linewidth=0.5)
+plt.plot(tempPos[i_window],tempLOD[i_window],label=['C' + str(i)],linewidth=0.5)
+
+plt.title("LOD, zoom on peak in Chromosome 4 for " + filename[i_trait])
+plt.xlabel('Marker number')
+plt.ylabel('LOD score')
+plt.xlim((tempPos[i_max]-100000,tempPos[i_max]+100000))
+# plt.legend()
+```
+
+The UPC2 gene (Standard Name) is also known as YDR213W (Systematic Name): [link to yeastgenome.org](https://www.yeastgenome.org/locus/S000002621). It spans locations 889751 to 892492. 
+
+In the VCF file, YDR213W is used. Six variants are involved: 
+
+* 889739 (c.-12C>T), 
+* 889957 (c.207G>A, shows up for Clotrimazole 30h), 
+* 891344 (c.1594G>A, shows up for Fluconazole 36h, Tebuconazole 30h), 
+* 891466 (c.1716C>A, shows up for Prothioconazole 72h), 
+* 892444 (c.2694C>T, shows up for Propiconazole 196h, Tebuconazole 44h, Voriconazole 30h), 
+* 892532 (various, e.g. c.41_42delAA). 
+
+The paper seems to consider the first five. 
+
+```{python}
+UPC2_start = 889751
+UPC2_end = 892492
+```
+
+Fig 2E inset is just 20 kb, 880000-900000, showing a handful of variant locations. 
+
+```{python}
+fig, ax = plt.subplots()
+ax.plot(tempPos[i_window],tempLOD[i_window],'-o',label=['C' + str(i)],linewidth=0.5)
+
+ax.plot([(3*UPC2_start-UPC2_end)/2,(3*UPC2_end-UPC2_start)/2],[14,14],'-k')
+
+ax.add_patch(patches.Rectangle((UPC2_start,13.5),UPC2_end-UPC2_start,1,facecolor='0.8',zorder=10))
+ax.text((UPC2_start+UPC2_end)/2,14,'UPC2',horizontalalignment='center',verticalalignment='center',zorder=11)
+ax.set_title("LOD, zoom on UPC2 gene on Chromosome 4 for " + filename[i_trait])
+ax.set_xlabel('Marker number')
+ax.set_ylabel('LOD score')
+ax.set_xlim((880000,900000))
+# plt.legend()
+```
 
 
+Searching VCF for 889739 which is the position of `-12C>T`, we find which entries in `variantPos` correspond to the five SNPs in UPC2:   
+```{python}
+i_12C = np.where(np.char.find(variantPos,'889739') > -1)[0][0]
 
-## LOD scores for 5-FU
+i572 = i_12C+3
+i2694 = i_12C+4
+print(variantPos[range(i_12C,i_12C+5)])
+```
+
+Extract the two columns for those variants
+```{python}
+test = x[:,(i572,i2694)]
+# test = phasedGenotype[:,(i572,i2694)]
+```
+
+Find the different combinations of parents across the two alleles: 'YJM/YJM', 'YJM/RM','RM/YJM','RM/RM': 
+
+```{python}
+ip1p1 = np.where((test[:,0]==1) & (test[:,1]==1))[0]
+ip1m1 = np.where((test[:,0]==1) & (test[:,1]==-1))[0]
+im1p1 = np.where((test[:,0]==-1) & (test[:,1]==1))[0]
+im1m1 = np.where((test[:,0]==-1) & (test[:,1]==-1))[0]
+plt.boxplot([y[ip1p1],y[ip1m1],y[im1p1],y[im1m1]])
+plt.plot(range(1,5),[y[ip1p1].mean(),y[ip1m1].mean(),y[im1p1].mean(),y[im1m1].mean()],'*')
+plt.xticks(np.arange(1,5,1),labels=['(1,1)', '(1,-1)', '(-1,1)', '(-1,-1)'])
+plt.title("UPC2 variants for " + filename[i_trait])
+plt.xlabel('Allele combination')
+plt.ylabel('Relative growth')
+plt.show()
+```
+
+Plot the mean plus or minus standard error for these four combinations: 
+
+```{python}
+y_means = [y[ip1p1].mean(),y[ip1m1].mean(),y[im1p1].mean(),y[im1m1].mean()]
+y_stderror = [y_sem(y[ip1p1]),y_sem(y[ip1m1]),y_sem(y[im1p1]),y_sem(y[im1m1])]
+plt.bar(range(1,5),y_means)
+plt.errorbar(range(1,5),y_means,y_stderror,linestyle='None',capsize=10)
+plt.xticks(np.arange(1,5,1),labels=['(1,1)', '(1,-1)', '(-1,1)', '(-1,-1)'])
+plt.title("UPC2 variants for " + filename[i_trait])
+plt.xlabel('Allele combination')
+plt.ylabel('Relative growth (mean +/- sem)')
+plt.show()
+
+```
+
+
+Check correlation of variant 
+```{python}
+np.corrcoef(x[:,i2694],y)
+```
+
+And compare with value from subset of data
+```{python}
+np.corrcoef(test[:,1],y)
+```
+
+Boxplot for max Lod on Chrom 4
+```{python}
+i_max = ((allChrom==4)*(lod1D)).argmax()
+jp1 = np.where(x[:,i_max]==1)[0]
+j0 = np.where(x[:,i_max]==0)[0]
+jm1 = np.where(x[:,i_max]==-1)[0]
+```
+
+```{python}
+plt.boxplot([y[jm1],y[j0],y[jp1]])
+ch4_maxcor = np.corrcoef(x[:,i_max],y)[0,1]
+plt.title(['Max LOD on Chr4, corr = ' + str(ch4_maxcor)])
+```
+
+# SKY1
+
+SKY1 is also known as YMR216C. [It is on chromosome 13 between 698811 and 701039](https://www.yeastgenome.org/locus/S000004829). In the VCF file it is on lines 9079-9098 (actual part starts at 9085).
+
+In the VCF file, YMR216C is used. 20 variants are involved, of which only two emerge from the analysis of causal variants: 
+
+* 699044 (c.1996A>G, shows up for 5Fcytosine 44h), 
+* 699680 (c.1360G>A, shows up for Rapamycin 58h)
+
+https://hgvs-nomenclature.org/stable/background/simple/
+
+Here's the VCF line for 699044. 
+
+> `XIII	699044	.	T	C	48318.08	.	AC=520;AF=0.451;AN=1153;DP=38746;MQ0=0;set=Intersection;ANN=C|missense_variant|MODERATE|YMR216C|YMR216C|transcript|Transcript_YMR216C|Coding|1/1|c.1996A>G|p.Thr666Ala|1996/2229|1996/2229|666/742||	GT:AD:DP:GQ:PL	0:32,0:32:99:0,1170	0:26,0:26:99:0,900	0:22,0:22:99:0,585	0:27,0:27:99:0,945	0:29,0:29:99:0,1035	0:24,0:24:99:0,889`
+
+`c.1996A>G` is the variant, at position 1996 in the coding DNA reference sequence. 
+`p.Thr666Ala` is the predicted amino acid change at amino acid 666. This corresponds to `T666A` in the paper. 
+
+Note that 666=1996/3 (rounded up), since three base pairs code for an amino acid. Positions 1,2,3 given AA1, 4,5,6 give AA2, etc. 
+
+Position 699680 has 
+
+> `XIII	699680	.	C	T	156312.08	.	AC=616;AF=0.509;AN=1210;DP=71856;MQ0=0;set=Intersection;ANN=T|missense_variant|MODERATE|YMR216C|YMR216C|transcript|Transcript_YMR216C|Coding|1/1|c.1360G>A|p.Val454Met|1360/2229|1360/2229|454/742||	GT:AD:DP:GQ:PL	1:2,92:94:99:3095,0	1:3,59:62:99:2114,0	1:0,56:56:99:2124,0	1:3,60:63:99:1883,0	1:0,88:88:99:3089,0	1:0,32:32:99:1093,0`
+
+This has a change at amino acid 454. The other one mentioned in the paper is `D738N`, presumably should correspond to `p.Asp738Asn`. 
+For confirmation of the correspondence, see [Amino Acids Representation Codes](https://www.ebi.ac.uk/pdbe/docs/roadshow_tutorial/msdtarget/AAcodes.html). 
+
+This one is in position 698828
+
+> `XIII	698828	.	C	T	70153.98	.	AC=573;AF=0.454;AN=1262;DP=40846;FS=0.000;MQ0=0;set=Intersection;ANN=T|missense_variant|MODERATE|YMR216C|YMR216C|transcript|Transcript_YMR216C|Coding|1/1|c.2212G>A|p.Asp738Asn|2212/2229|2212/2229|738/742||	GT:AD:DP:GQ:PL	0:19,0:19:99:0,585	0:15,0:15:99:0,405	0:19,0:19:99:0,599	0:23,0:23:99:0,675	0:19,0:19:99:0,563	0:17,0:17:99:0,469`
+
+## Find the SKY1 variants
+
+```{python}
+i_SKY1_D738N = np.where(np.char.find(variantPos,'698828') > -1)[0][0]
+i_SKY1_T666A = np.where(np.char.find(variantPos,'699044') > -1)[0][0]
+```
+
+## Gather the SKY1 5-FU trait data
+```{python}
+
+##### In figure 3A
+i_trait = 30 # '30h-5FU.txt'
+# i_trait = 36 # '44h-5FU.txt' < peaks look wrong, big peak in Chr3
+```
+
+## Exclude wells that don't meet coverage threshold
+
+```{python}
+variantCalls = np.sum(abs(phasedGenotype),axis=0)
+s = np.sum(abs(phasedGenotype),axis=1)
+
+# Cutoff for number of variant calls needed to include a segregant.
+rowCutoff = 5500
+columnCutoff = 0
+
+traitRow = trait[i_trait,]
+# https://stackoverflow.com/questions/7820809/understanding-weird-boolean-2d-array-indexing-behavior-in-numpy
+x=phasedGenotype[(s>rowCutoff) & (traitRow != -1),:][:,variantCalls>columnCutoff]
+# Remove edge count and plateNorm from variant calls
+# variantCalls(1:13)=[];
+y=traitRow[(s>rowCutoff) & (traitRow != -1)]
+
+```
+
+```{python}
+# Normalize trait y to mean 0, variance 1
+y = y - np.mean(y)
+y = y/np.std(y,ddof=1) # unbiased estimate, unlike MATLAB which does that by default
+```
+
+```{python}
+pr = np.zeros(x.shape[1])
+lod1D = np.zeros(x.shape[1])
+for i in range(x.shape[1]): 
+    pr[i] = np.corrcoef(x[:,i],y)[0,1]
+    # pr[i] = pearsonr(parents_generations[-1][:,i],phenotypes)
+    lod1D[i] = -x.shape[0]*np.log(1-pr[i]**2)/(2*np.log(10))
+
+```
+
+```{python}
+i_start = 0
+for i in range(1,18):
+    i_chrom = np.where(allChrom==i)
+    tempPos = allPos[i_chrom] + i_start
+    plt.plot(tempPos,lod1D[i_chrom],label=['C' + str(i)],linewidth=0.5)
+    i_start = tempPos[-1]
+
+plt.title("LOD score with normalised phenotype " + filename[i_trait])
+plt.xlabel('Marker number')
+plt.ylabel('LOD score')
+# plt.legend()
+```
+
+## Extract the two columns for the SKY1 variants
+
+```{python}
+test = x[:,(i_SKY1_D738N,i_SKY1_T666A)]
+```
+
+Find the different combinations of parents across the two alleles: 'YJM/YJM', 'YJM/RM','RM/YJM','RM/RM': 
+
+```{python}
+ip1p1 = np.where((test[:,0]==1) & (test[:,1]==1))[0]
+ip1m1 = np.where((test[:,0]==1) & (test[:,1]==-1))[0]
+im1p1 = np.where((test[:,0]==-1) & (test[:,1]==1))[0]
+im1m1 = np.where((test[:,0]==-1) & (test[:,1]==-1))[0]
+plt.boxplot([y[ip1p1],y[ip1m1],y[im1p1],y[im1m1]])
+plt.plot(range(1,5),[y[ip1p1].mean(),y[ip1m1].mean(),y[im1p1].mean(),y[im1m1].mean()],'*')
+plt.xticks(np.arange(1,5,1),labels=['(1,1)', '(1,-1)', '(-1,1)', '(-1,-1)'])
+plt.title("UPC2 variants for " + filename[i_trait])
+plt.xlabel('Allele combination')
+plt.ylabel('Relative growth')
+plt.show()
+```
+
+Plot the mean plus or minus standard error for these four combinations: 
+
+```{python}
+y_means = [y[ip1p1].mean(),y[ip1m1].mean(),y[im1p1].mean(),y[im1m1].mean()]
+y_stderror = [y_sem(y[ip1p1]),y_sem(y[ip1m1]),y_sem(y[im1p1]),y_sem(y[im1m1])]
+plt.bar(range(1,5),y_means)
+plt.errorbar(range(1,5),y_means,y_stderror,linestyle='None',capsize=10)
+plt.xticks(np.arange(1,5,1),labels=['(1,1)', '(1,-1)', '(-1,1)', '(-1,-1)'])
+plt.title("UPC2 variants for " + filename[i_trait])
+plt.xlabel('Allele combination')
+plt.ylabel('Relative growth (mean +/- sem)')
+plt.show()
+
+```
 
 
 # Do it again with different genotype data
@@ -515,8 +789,8 @@ y=traitRow[(s>rowCutoff) & (traitRow != -1)]
 
 ```{python}
 # Normalize trait y to mean 0, variance 1
-y = y - np.mean(y);
-y = y/np.std(y);
+y = y - np.mean(y)
+y = y/np.std(y,ddof=1) # unbiased estimate, unlike MATLAB which does that by default
 ```
 
 ```{python}
@@ -540,40 +814,5 @@ for i in range(1,18):
 plt.title("LOD, pre-empty wells geno and normalised phenotype " + filename[i_trait])
 plt.xlabel('Marker number')
 plt.ylabel('LOD score')
-# plt.legend()
-```
-
-# Azole responses
-
-> This standard analysis established a locus of strong effect on the right arm of Chromosome 4
-
-```{python}
-i_chrom = np.where(allChrom==4)
-tempPos = allPos[i_chrom]
-tempLOD = lod1D[i_chrom]
-
-plt.plot(tempPos,lod1D[i_chrom],label=['C' + str(i)],linewidth=0.5)
-
-plt.title("LOD, Chromosome 4 for " + filename[i_trait])
-plt.xlabel('Marker number')
-plt.ylabel('LOD score')
-# plt.legend()
-```
-
-Fig 2B inset is approx 230 kb of Chromosome 4. 
-```{python}
-i_chrom = np.where(allChrom==4)
-tempPos = allPos[i_chrom]
-tempLOD = lod1D[i_chrom]
-i_max = tempLOD.argmax()
-i_window = np.where(abs(tempPos-tempPos[i_max]) < 10000)
-
-plt.plot(tempPos,tempLOD,label=['C' + str(i)],linewidth=0.5)
-plt.plot(tempPos[i_window],tempLOD[i_window],label=['C' + str(i)],linewidth=0.5)
-
-plt.title("LOD, Chromosome 4 for " + filename[i_trait])
-plt.xlabel('Marker number')
-plt.ylabel('LOD score')
-plt.xlim((tempPos[i_max]-100000,tempPos[i_max]+100000))
 # plt.legend()
 ```
