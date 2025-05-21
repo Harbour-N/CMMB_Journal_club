@@ -1,0 +1,19 @@
+---
+title: Spatial correlation functions
+description: "Go over the paper: Extended correlation functions for spatial analedysis of multiplex imaging data, Bull et al. 2024"
+authors:
+  - name: Nicholas Harbour
+format: 
+  html:
+    embed-resources: true
+    code-fold: true
+    number-sections: true
+    toc: true
+    toc-depth: 3
+    date-modified: last-modified
+    date-format: "MMMM DD, YYYY, HH:mm:ss"
+jupyter: python3
+---
+
+
+The link to the GitHub repo for the paper is here <https://github.com/JABull1066/ExtendedCorrelationFunctions>
