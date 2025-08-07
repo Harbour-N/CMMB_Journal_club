@@ -1,0 +1,167 @@
+---
+title: "Idividual based model simulation"
+authors:
+  - name: Nicholas Harbour   
+  - name: Markus Owen
+format: 
+  html:
+    embed-resources: true
+    code-fold: true
+    number-sections: true
+    toc: true
+    toc-depth: 3
+    date: now
+    date-modified: last-modified
+    date-format: "MMMM DD, YYYY, HH:mm:ss"
+jupyter: python3
+---
+
+
+```{python}
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+from numba import jit
+
+import gsc_model_stochastic as gms
+
+```
+
+
+Define a cell class to hold the state of each cell in the simulation:
+```{python}
+
+class Cell:
+    def __init__(self, position=None, parent_id=None, pheno = 0):
+        self.id = np.random.randint(1000000)  # Unique identifier for the cell
+        self.parent_id = parent_id
+        self.age = 0
+        self.divisions = 0
+        self.position = position  # e.g. (x, y) or None
+        self.phenotype = pheno
+        self.state = 1
+
+
+
+```
+
+
+Simplest siulation we consider:
+Only one cell type.
+Phenotype is a number between 0 and 1, that can determinet the cells type after.
+cells that divide to produce 2 new cells with the same phenotype value as parent cell. 
+No cell death.
+
+```{python}
+
+
+def update_phenotype(cell, dt, mu=0.12, sigma=0.05):
+    """
+    Update the phenotype of a cell via Euler-Maruyama method for SDE:
+    dX = mu*dt + sigma*dW
+    """
+    dW = np.random.normal(0, np.sqrt(dt))
+    cell.phenotype = cell.phenotype +  mu * dt + sigma * dW
+
+
+```
+
+
+
+```{python}
+
+def gillespie_ibm(t_start, t_stop, Ps):
+
+    # initialise 100 cells with phenotype in range [0,0.1] -> close to stem cell
+    cells = []
+    for _ in range(100):
+        cells.append(Cell(pheno=np.random.uniform(0, 0.1)))
+    t_list = [t_start]
+    N_list = [len(cells)]
+    pheno_list = [[cell.phenotype for cell in cells]]
+    
+    t = t_start
+    
+    while t < t_stop:
+
+        
+        # Total Number of cells
+        n_cells = len(cells)
+
+        
+        # if no events possible, stop
+        if n_cells == 0:
+            break
+        
+        # define event propensities
+        rate_division = Ps*n_cells  # Only symmetric division
+        
+        rates = np.array([rate_division])
+        total_rate = rates.sum()
+        
+        if total_rate == 0:
+            break
+        
+        # sample time to next event
+        dt = np.random.exponential(1 / total_rate)
+        t = t + dt
+
+        # Every time step update the phenotype of each cell
+        for cell in cells:
+            update_phenotype(cell, dt)
+
+        
+        # choose event
+        r = np.random.uniform(0, total_rate)
+        event = np.searchsorted(rates.cumsum(), r)
+        print(f"Event: {event}, Time: {t}, Total Rate: {total_rate}, dt: {dt}")
+        
+        if event == 0:
+            # Self-renewal: GSC → GSC + GSC
+            parent = np.random.choice(cells)
+            cells.append(Cell(parent_id=parent.id, pheno=parent.phenotype))
+            cells.append(Cell(parent_id=parent.id, pheno=parent.phenotype))
+        
+      
+        
+        # Record data
+        t_list.append(t)
+        N_list.append(len(cells))
+        phenotypes = [cell.phenotype for cell in cells]
+        pheno_list.append(phenotypes)  # Store all phenotypes at each time step
+    
+    return np.array(t_list), np.array(N_list), pheno_list
+
+```
+
+
+
+```{python}
+
+
+### Illustrative model simulation
+
+# initialise parameters for simulation
+t_stop = 7
+t_start = 0
+Ps = 0.04  # Division rate
+t_list, N_list, pheno_list = gillespie_ibm(t_start, t_stop, Ps)
+
+
+# Plot the results
+plt.plot(t_list, N_list)
+plt.xlabel('Time')
+plt.ylabel('Number of Cells')
+plt.title('Cell Division Simulation')
+plt.show()
+
+
+# Plot hostogram of the phenotypes at several time points
+plt.hist(pheno_list[0], bins=20, alpha=0.5, label='t=0', color='blue', density=True)
+plt.hist(pheno_list[10], bins=20, alpha=0.5, label='t=1', color='orange', density=True)
+plt.hist(pheno_list[20], bins=20, alpha=0.5, label='t=2', color='green', density=True)
+plt.xlabel('Phenotype')
+
+
+```
+
