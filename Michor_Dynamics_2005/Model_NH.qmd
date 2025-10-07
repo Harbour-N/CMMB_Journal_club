@@ -1,0 +1,300 @@
+---
+title: Example of model simulation
+description: Stem cell model
+authors:
+  - name: Nicholas Harbour
+format: 
+  html:
+    embed-resources: true
+    code-fold: true
+    number-sections: true
+    toc: true
+    toc-depth: 3
+    date: now
+    date-modified: last-modified
+    date-format: "MMMM DD, YYYY, HH:mm:ss"
+jupyter: python3
+---
+
+
+```{python}
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+```
+
+This notebook is based on the paper: Michor, F., Hughes, T., Iwasa, Y. et al. Dynamics of chronic myeloid leukaemia. Nature 435, 1267–1270 (2005). https://doi.org/10.1038/nature03669
+
+# Model
+
+## Assumption / notation
+denote $x_0, x_1, x_2, x_3$ the abundance of stem cells, progenitor cells, differentaited cells, and terminally differentiated cells (Healthy cells).
+
+The respective Leukemic (cancer) abundances are denoted $y_0, y_1, y_2, y_3$ for cells without resistance mutations and  $z_0, z_1, z_2, z_3$ for cancer cells with resistant (imatinib resistance) mutation.
+
+- assume normal stem cells held constant by heomeostatic mechanism.
+- Stem cells produce progenitor cells which produce differneated cells which produce terminally differentiated cells. The rate constants are given by $a,b,c$
+- Assume thatBCR-ABL oncogene increases rate at which leukemic stem cells divide and differentiate into progenitors and BCR-ABL is thought to increase progenitor proliferatioin and differentiation. So we expect $a_y>a_x$ and $b_y>b_x$.
+- Imatinib counteracts this effect reducing the rates to $\hat{a}_y < a_y$ and $\hat{b}_y < b_y$
+- Death rates of stem, progenitor, differentaited and terminal cells denoted $d_0,d_1,d_2,d_3$.
+
+
+## Model equations
+
+healthy cells
+$$
+\begin{aligned}
+\dot{x}_0 &=  [\lambda(x_0) - d_0]x_0 \\
+\dot{x}_1 &=  a_x x_0 - d_1 x_1 \\
+\dot{x}_2 &=  b_x x_1 - d_2 x_2 \\
+\dot{x}_3 &=  c_x x_2 - d_3 x_3 \\
+\end{aligned}
+$$
+
+Sensitive cancer cells
+
+$$
+\begin{aligned}
+\dot{y}_0 &=  [r_y(1 - u) - d_0]y_0 \\
+\dot{y}_1 &=  a_y y_0 - d_1 y_1 \\
+\dot{y}_2 &=  b_y y_1 - d_2 y_2 \\
+\dot{y}_3 &=  c_y y_2 - d_3 y_3 \\
+\end{aligned}
+$$
+
+Mutated / resistant cacer cells
+
+$$
+\begin{aligned}
+\dot{z}_0 &=  [r_z - d_0]z_0 + r_y y_0 u \\
+\dot{z}_1 &=  a_z z_0 - d_1 z_1 \\
+\dot{z}_2 &=  b_z z_1 - d_2 z_2 \\
+\dot{z}_3 &=  c_z z_2 - d_3 z_3 \\
+\end{aligned}
+$$
+
+Homeostatis of normal stem cells is achived via approproate declining function $\lambda$.
+
+
+# Model simulation
+
+```{python}
+
+def stem_cell_model(IC,t,d_0,d_1,d_2,d_3,a_x,b_x,c_x,a_y,b_y,c_y,a_z,b_z,c_z,r_y,r_z,u,a_y_therapy,b_y_therapy,a_z_therapy,b_z_therapy,therapy):
+
+    nt = len(t)
+    dt = t[1] - t[0]
+    print(therapy)
+
+    x_0 = np.zeros(nt)
+    x_1 = np.zeros(nt)
+    x_2 = np.zeros(nt)
+    x_3 = np.zeros(nt)
+
+    y_0 = np.zeros(nt)
+    y_1 = np.zeros(nt)
+    y_2 = np.zeros(nt)
+    y_3 = np.zeros(nt)
+
+    z_0 = np.zeros(nt)
+    z_1 = np.zeros(nt)
+    z_2 = np.zeros(nt)
+    z_3 = np.zeros(nt)
+
+    # Set ICs
+    x_0[0] = IC[0]
+    x_1[0] = IC[1]
+    x_2[0] = IC[2]
+    x_3[0] = IC[3]
+
+    y_0[0] = IC[4]
+    y_1[0] = IC[5]
+    y_2[0] = IC[6]
+    y_3[0] = IC[7]
+
+    z_0[0] = IC[8]
+    z_1[0] = IC[9]
+    z_2[0] = IC[10]
+    z_3[0] = IC[11]
+
+    # healthy cells remain at equilibrium
+    for i in range(nt):
+        x_0[i] = x_0[0]
+        x_1[i] = a_x*x_0[0] / d_1
+        x_2[i] = b_x *x_1[0] / d_2
+        x_3[i] = c_x *x_2[0] / d_3
+
+
+    for i in range(nt-1):
+
+        if therapy[i] == 1:
+            ay = a_y_therapy
+            by = b_y_therapy
+            az = a_z_therapy
+            bz = b_z_therapy
+        else:
+            ay = a_y
+            by = b_y
+
+
+        # Cancer cells (sensirtive / no mutation)
+        y_0[i+1] = y_0[i] + dt * ( (r_y*(1-u) - d_0)*y_0[i] )
+        y_1[i+1] = y_1[i] + dt * ( ay*y_0[i] - d_1*y_1[i] )
+        y_2[i+1] = y_2[i] + dt * ( by*y_1[i] - d_2*y_2[i] )
+        y_3[i+1] = y_3[i] + dt * ( c_y*y_2[i] - d_3*y_3[i] )
+
+        # Mutated cancer cells
+        z_0[i+1] = z_0[i] + dt * ( (r_z -d_0)*z_0[i] + r_y*y_0[i]*u )
+        z_1[i+1] = z_1[i] + dt * ( az*z_0[i] - d_1*z_1[i] )
+        z_2[i+1] = z_2[i] + dt * ( bz*z_1[i] - d_2*z_2[i] )
+        z_3[i+1] = z_3[i] + dt * ( c_z*z_2[i] - d_3*z_3[i] )        
+
+    
+    return x_0, x_1, x_2, x_3, y_0, y_1, y_2, y_3, z_0, z_1, z_2, z_3
+
+
+```
+
+```{python}
+
+# Parameter values taken from the figure 4
+d_0 = 0.003
+d_1 = 0.008
+d_2 = 0.05
+d_3 = 1
+
+a_x = 0.8
+b_x = 5
+c_x = 100
+r_y = 0.008
+a_y = 2*a_x
+b_y = 2*b_x
+c_y = c_x
+r_z = 0.023
+a_z = a_y
+b_z = b_y
+c_z = c_y
+
+# During therapy
+a_y_therapy = a_y / 100.0
+b_y_therapy = b_y / 750.0
+a_z_therapy = a_y
+b_z_therapy = b_y
+
+# When considering resistant mutation we have
+z_0 = 10
+u = 4*10**-8
+
+# Estimated ICs from the plot
+IC = np.array([10**6,10**8,10**10,10**12,10**5.5,10**7.9,10**10,10**12,10,2500,10**6,10**8])
+
+```
+
+
+```{python}
+
+t = np.linspace(0,500,1001)
+therapy = np.ones(len(t))
+
+# Simulate continous therapy
+x_0,x_1,x_2,x_3, y_0, y_1, y_2, y_3, z_0, z_1, z_2, z_3 = stem_cell_model(IC,t,d_0,d_1,d_2,d_3,a_x,b_x,c_x,a_y,b_y,c_y,a_z,b_z,c_z,r_y,r_z,0,a_y_therapy,b_y_therapy,a_z_therapy,b_z_therapy,therapy)
+
+# Simulate stop in therapy at time 400
+for i in range(len(t)):
+    if t[i] < 400:
+        therapy[i] = 1
+    else:
+        therapy[i] = 0
+xt_0,xt_1,xt_2,xt_3, yt_0, yt_1, yt_2, yt_3, zt_0, zt_1, zt_2, zt_3 = stem_cell_model(IC,t,d_0,d_1,d_2,d_3,a_x,b_x,c_x,a_y,b_y,c_y,a_z,b_z,c_z,r_y,r_z,0,a_y_therapy,b_y_therapy,a_z_therapy,b_z_therapy,therapy)
+
+# Simulate model with resistant mutation rate
+therapy = np.ones(len(t))
+xr_0,xr_1,xr_2,xr_3, yr_0, yr_1, yr_2, yr_3, zr_0, zr_1, zr_2, zr_3 = stem_cell_model(IC,t,d_0,d_1,d_2,d_3,a_x,b_x,c_x,a_y,b_y,c_y,a_z,b_z,c_z,r_y,r_z,u,a_y_therapy,b_y_therapy,a_z_therapy,b_z_therapy,therapy)
+
+```
+
+
+```{python}
+#| fig-cap: Black = healthy cells, Blue = Cancer (leukimic) cells no mutation, Red = Mutated / resistant cancer cells
+
+# make plot
+
+fig,ax = plt.subplots(5,3, figsize = (15,25),sharey = 'row', sharex=True)
+
+
+ax[0,0].plot(t,x_0, 'k')
+ax[0,0].plot(t,y_0, 'b')
+ax[0,0].set_yscale('log')
+ax[0,0].set_ylim([8,10**7])
+ax[0,0].set_ylabel("Stem cells (SC)")
+#ax[0].plot(t,z_0)
+
+ax[1,0].plot(t,x_1,'k')
+ax[1,0].plot(t,y_1,'b')
+ax[1,0].set_yscale('log')
+ax[1,0].set_ylim([1000,10**9])
+ax[1,0].set_ylabel("Progenitor cell (PC)")
+
+ax[2,0].plot(t,x_2,'k')
+ax[2,0].plot(t,y_2,'b')
+ax[2,0].set_yscale('log')
+ax[2,0].set_ylim([10**4,10**11])
+ax[2,0].set_ylabel("Differentiated cell (DC)")
+
+ax[3,0].plot(t,x_3,'k')
+ax[3,0].plot(t,y_3,'b')
+ax[3,0].set_yscale('log')
+ax[3,0].set_ylim([10**7,10**13])
+ax[3,0].set_ylabel("Terminal cell (TC)")
+
+ax[4,0].plot(t, (y_0+y_1+y_2+y_3) / (x_0+x_1+x_2+x_3),'g')
+ax[4,0].set_yscale('log')
+ax[4,0].set_ylim([0.0001,100])
+ax[4,0].set_ylabel("Cancer cells / normal cells")
+
+ax[0,1].plot(t,xt_0, 'k')
+ax[0,1].plot(t,yt_0, 'b')
+ax[0,1].axvline(400,color = 'gray', alpha = 0.5,ls = '--')
+
+ax[1,1].plot(t,xt_1, 'k')
+ax[1,1].plot(t,yt_1, 'b')
+ax[1,1].axvline(400,color = 'gray', alpha = 0.5,ls = '--')
+
+ax[2,1].plot(t,xt_2, 'k')
+ax[2,1].plot(t,yt_2, 'b')
+ax[2,1].axvline(400,color = 'gray', alpha = 0.5, ls = '--')
+
+
+ax[3,1].plot(t,xt_3, 'k')
+ax[3,1].plot(t,yt_3, 'b')
+ax[3,1].axvline(400,color = 'gray', alpha = 0.5, ls = '--')
+
+ax[4,1].plot(t,  (yt_0 + yt_1 + yt_2 + yt_3) / (xt_0+xt_1+xt_2+xt_3), 'g')
+ax[4,1].axvline(400,color = 'gray', alpha = 0.5, ls = '--')
+
+
+
+ax[0,2].plot(t,xr_0, 'k')
+ax[0,2].plot(t,yr_0, 'b')
+ax[0,2].plot(t,zr_0,'r')
+
+ax[1,2].plot(t,xr_1, 'k')
+ax[1,2].plot(t,yr_1, 'b')
+ax[1,2].plot(t,zr_1,'r')
+
+ax[2,2].plot(t,xr_2, 'k')
+ax[2,2].plot(t,yr_2, 'b')
+ax[2,2].plot(t,zr_2,'r')
+
+
+ax[3,2].plot(t,xr_3, 'k')
+ax[3,2].plot(t,yr_3, 'b')
+ax[3,2].plot(t,zr_3,'r')
+
+ax[4,2].plot(t,  (yr_0 + yr_1 + yr_2 + yr_3 + z_0 + z_1 + z_2 + z_3) / (xt_0+xt_1+xt_2+xt_3), 'g')
+
+
+plt.show()
+
+```
