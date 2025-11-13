@@ -1,0 +1,402 @@
+---
+title: Using Baysian model calibration for simple model
+description: We will walk trhough basic basian approach to model fitting for logistic equation
+authors:
+  - name: Nicholas Harbour
+format: 
+  html:
+    embed-resources: true
+    code-fold: true
+    number-sections: true
+    toc: true
+    toc-depth: 3
+    date: now
+    date-modified: last-modified
+    date-format: "MMMM DD, YYYY, HH:mm:ss"
+jupyter: python3
+---
+
+```{python}
+
+# Import all librabries at the begginig
+import numpy as np
+import matplotlib.pyplot as plt
+import pymc as pm
+import arviz as az
+from pytensor.compile.ops import as_op
+import pytensor
+import pytensor.tensor as pt
+#from numba import njit
+
+pytensor.config.mode = "NUMBA"
+
+
+print(pytensor.config.blas__ldflags)
+
+
+```
+
+This is based on the paper [Predictive digital twin for optimizing patient-specific radiotherapy regimens under uncertainty in high-grade gliomas](https://doi.org/10.3389/frai.2023.1222612)
+
+The code is based on the Pymc tutorial [here](https://www.pymc.io/projects/examples/en/latest/ode_models/ODE_Lotka_Volterra_multiple_ways.html)
+
+# Model set up
+
+We will consider a simple logistic model for tumour growth
+
+$$
+\frac{dc}{dt} = \rho c (1 - c/K)
+$$ {eq_logistic}
+
+$$
+\theta = [\rho, K, c_{IC}]
+$$
+
+
+# Simulation process
+
+Consider a virtual patient in which we simulate a tumour via our model @eq_logistic, with underlying true parameter set $\theta_\text{true}$.
+Note that $\theta_\text{true}$ is never seen by the predictive digital twin.
+We can simulate a collection of $n_\text{obs}$ observations $\mathbf{y} = [y_{t_1},..., y_{t_{n_\text{obs}}}]$, with a simple additive noise model
+
+$$
+y_{t_i} = c(t_i, \theta_\text{true}) + \epsilon_i
+$$
+
+Where the noise $\epsilon_i$ follows a truncated normal distribution $\mathcal{N}(0,\sigma^2; -c(t_i, \theta_\text{true}), + \infty)$, with a lower truncation bound of $-c(t_i, \theta_\text{true})$ to avoid non-physical negative observations. The general truncated normal is given by $\mathcal{N}(\mu,\sigma^2; a, b)$ with mean $\mu$ and variance $\sigma^2$ and truncation range $[a,b]$.
+For this we will assume $\sigma = 2 \times 10^9$ (this corresponds to 10% of the mean value of $c_{IC}$).
+
+```{python}
+sigma = 2*10**9
+# Function to add the measurement noise to data
+def add_noise(data):
+    noisy_data = np.zeros(len(data))
+    for i in range(len(data)):
+        lower = -data[i]
+        upper = np.inf
+
+        a,b = (lower - data[i]) / sigma, (upper - data[i]) / sigma
+
+        # set up a truncated normal dist
+        rv = truncnorm(a, b, loc=data[i], scale=sigma)
+
+        # add random sample to data to add noise
+        noisy_data[i] = rv.rvs(1)
+
+    return noisy_data
+
+```
+
+
+# Bayesian model calibration
+
+Bayesian framework combines prior knowledge of parameters with observed data to update probabilistic distributions of parameters.
+This Bayesian framework provides confidence levels for the computed model parameters.
+The inclusion of prior knowledge can be particularly valuable in data poor areas.
+Priors $\mathcal{P}(\theta)$ can be constructed from historic data.
+We define truncated normal distributions based on values from literature as our prior distribution
+
+| Parameter| Mean                 | Standard deviation   | Lower bound          | Upper bound          |
+|----------|----------------------|----------------------|----------------------|----------------------|
+| $\rho$   | 0.09                 | 0.15                 |  0.07                |  0.25                |
+| $K$      | $1 \times 10^{11}$   | $2 \times 10^{10}$   |  $9 \times 10^{10}$  | $1.8 \times 10^{11}$ |
+| $c_{IC}$ | $1.9 \times 10^{10}$ | $1.2 \times 10^{10}$ |  $4.7 \times 10^{9}$ | $4.7 \times 10^{10}$ |
+
+: Prior distributions for probabilistic parameters.
+
+
+
+```{python}
+
+# Import truncated norm
+from scipy.stats import truncnorm
+
+param_names = ["$\\rho$", "$K$", "$c_{IC}$"]
+param_bounds = np.array([
+    [0.007, 0.25],
+    [9*10**10, 1.8*10**11],
+    [4.7*10**9, 4.7*10**10]
+])
+param_means = np.array([0.09, 10**11, 1.9*10**10])
+param_sd = np.array([0.15,2*10**10, 1.2*10**10])
+
+# Make a plot of the prior distrubutions
+
+fig, ax = plt.subplots(2,2)
+axs = ax.flatten()
+
+for i in range(len(axs)-1):
+  # check the documentation https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.truncnorm.html
+  # Loc = mean
+  # Scale = sd
+  # If a_trunc and b_trunc are the abscissae at which we wish to truncate the distribution (as opposed to the number of standard deviations from loc), then we can calculate the distribution parameters a and b as follows:
+  a,b = (param_bounds[i,0] - param_means[i]) / param_sd[i], (param_bounds[i,1] - param_means[i]) / param_sd[i]
+
+  # A random variable we can sample from
+  rv = truncnorm(a, b, loc=param_means[i], scale=param_sd[i])
+
+  
+  # X values spanning the truncation interval
+  x = np.linspace(param_bounds[i,0], param_bounds[i,1], 200)
+
+  # PDF values
+  y = rv.pdf(x)
+
+  # Plot
+  axs[i].plot(x, y, 'b-', lw=2)
+  axs[i].set_title(f"{param_names[i]}")
+  axs[i].set_xlabel("Value")
+  axs[i].set_ylabel("PDF")
+
+
+
+fig.suptitle("Prior distributions for model parameters $\mathscr{P}(\\theta)$")
+
+fig.tight_layout()
+
+```
+
+
+Observation data $\mathbf{y}$ from the patient are assimilated to estimate the updated distribution of $\theta$ i.e., the posterior distribution, through Bayes rule
+
+$$
+\mathcal{P} (\theta | \mathbf{y}) = \mathcal{P}(\mathbf{y}|\theta) \mathcal{P}(\theta)
+$$
+
+## Step 1 IC 
+
+After obtaining the initial time point measurement we first update the prior of the IC to use a truncated normal distribution with mean given by the observed value $y_{t_1}$ and $\sigma^2$ to account for measurement errors.
+Therefore $c_{IC} = \mathcal{N}(y_{t_1}, \sigma^2 \text{max}(0,y_{t_1} - 2 \sigma), y_{t_1} + 2 \sigma)$.
+That is the upper and lower truncation bound are defined by $+-2 \sigma$.
+This updated distribution $c_{IC}$ is then used as the new updated prior (posterior) in step 2
+
+## Step 2
+
+The Bayesian inference is obtained via Markov Chain Monte Carlo (MCMC) for the remaining observations. 
+
+
+```{python}
+
+# Time/indexes poits where synthetic measuremnts are taken
+times = np.array([0,50,100,200,300,400,500,600, 700])
+
+t_final = 1000
+t = np.linspace(0,t_final,1001)
+dt = t[1] - t[0]
+
+# Function to solve the logistic growth model
+def logistic_model(params):
+    rho,k,IC = params
+    c = np.zeros(len(t))
+    c[0] = IC
+
+    for i in range(len(t)-1):
+        c[i+1] = c[i] + dt * (rho *c[i] * (1 - c[i] / k))
+    
+    return c[times]
+
+
+```
+
+```{python}
+
+
+# Patient 1 true parameters
+rho_1 = 0.0114
+k_1 = 1.17e11
+IC_1 = 1.54e10
+
+# Simulate the model with these parameters
+c_1 = logistic_model([rho_1,k_1,IC_1])
+
+# We get only three measuremtns are specific times
+# Add noise to the data
+noisy_data1 = add_noise(c_1)
+
+
+plt.plot(t[times],c_1)
+#plt.plot(t[times],data_1,'o')
+plt.plot(t[times], noisy_data1, '*')
+
+plt.legend(["True patient simulation", "Meausred noisy data"])
+
+
+
+```
+
+
+# PyMC Bayesian implementation 
+
+We will use the PyMC librabry to perfrom Bayesiam calerbration of the model
+
+First we need to convert our numpy/scipy function in a pytensor wrapper so that it can be used in PyMC
+```{python}
+
+# the function takes a single input which is a double-precision float vecotr.
+# The output is a vector of the model solution
+@as_op(itypes= [pt.dvector], otypes = [pt.dvector])
+def pytensort_forward_model_matrix(params):
+  return logistic_model(params)
+
+
+```
+
+```{python}
+
+# Initialise a PyMC model object
+basic_model = pm.Model()
+
+with basic_model:
+
+  # Priors for unknown model parameters
+  rho = pm.TruncatedNormal("rho", mu=param_means[0], sigma=param_sd[0], lower=param_bounds[0,0], upper=param_bounds[0,1])
+  k = pm.TruncatedNormal("k", mu=param_means[1], sigma=param_sd[1], lower=param_bounds[1,0], upper=param_bounds[1,1])
+  c_IC = pm.TruncatedNormal("c_IC", mu=param_means[2], sigma=param_sd[2], lower=param_bounds[2,0], upper=param_bounds[2,1])
+
+
+  # ODE solution
+  ode_solution = pytensort_forward_model_matrix(pm.math.stack([rho,k,c_IC]))
+
+  # Likelihood
+  y_obs =  pm.TruncatedNormal("y_obs", mu=ode_solution, sigma=sigma, observed=noisy_data1, lower = 0)
+
+
+```
+
+
+```{python}
+
+#pm.model_to_graphviz(model=basic_model)
+
+```
+
+
+We will use slice sample
+
+```{python}
+
+# Variable list to give to the sample step parameter
+vars_list = list(basic_model.values_to_rvs.keys())[:-1]
+
+```
+
+
+```{python}
+# Specify the sampler
+sampler = "Slice Sampler"
+tune = draws = 1000
+
+# Inference!
+with basic_model:
+    trace_slice = pm.sample(step=[pm.Slice(vars_list)], tune=tune, draws=draws,progressbar= True, cores = 1) # had to set cores = 1 to get it to run, no idea why!!!
+trace = trace_slice
+az.summary(trace)
+
+```
+
+
+## Visualise results
+
+
+```{python}
+
+def logistic_model_full(params, times_full=None):
+    """Return the full-time logistic model solution over `t` (or provided times_full).
+
+    params: array-like [rho, k, IC]
+    times_full: optional time vector (defaults to global `t`)
+    """
+    rho, k, IC = params
+    if times_full is None:
+        times_full = t
+    dt_local = times_full[1] - times_full[0]
+    c = np.zeros(len(times_full))
+    c[0] = IC
+    for i in range(len(times_full) - 1):
+        c[i + 1] = c[i] + dt_local * (rho * c[i] * (1 - c[i] / k))
+    return c
+
+
+def plot_model_trace(ax, trace_df, row_idx, lw=1, alpha=0.2):
+    """Plot a single posterior sample model run (full curve + values at observation times)."""
+    cols = ["rho", "k", "c_IC"]
+    row = trace_df.iloc[row_idx][cols].values
+
+    # full trajectory
+    full = logistic_model_full(row)
+    ax.plot(t, full, color="C0", lw=lw, alpha=alpha)
+
+    # model at observation times (use existing logistic_model which returns values at `times`)
+    obs_vals = logistic_model(row)
+    ax.plot(t[times], obs_vals, marker=".", linestyle="None", color="C1", alpha=max(0.1, alpha))
+
+
+def plot_inference(
+    ax,
+    trace,
+    num_samples=25,
+    title="Data and Inference Model Runs",
+    plot_model_kwargs=dict(lw=1, alpha=0.2),
+):
+    """Overlay multiple posterior model runs and the observed noisy data.
+
+    Parameters
+    - ax: matplotlib Axes to plot on
+    - trace: arviz InferenceData or PyMC trace
+    - num_samples: number of posterior samples to plot
+    """
+    # Extract a small number of posterior draws and convert to dataframe
+    posterior = az.extract(trace, num_samples=num_samples)
+    trace_df = posterior.to_dataframe()
+
+    # Plot sampled model trajectories
+    for row_idx in range(len(trace_df)):
+        plot_model_trace(ax, trace_df, row_idx, **plot_model_kwargs)
+
+    # Plot observed noisy data (if available in scope)
+    try:
+        ax.plot(t[times], noisy_data1, "ko", label="observations")
+    except Exception:
+        pass
+
+    ax.set_xlabel("Time")
+    ax.set_ylabel("Tumour size")
+    ax.set_title(title, fontsize=14)
+    ax.legend()
+
+
+def plot_trace(trace, var_names=None, figsize=(10, 6)):
+    """Simple wrapper to plot parameter traces and marginal posteriors using ArviZ."""
+    if var_names is None:
+        var_names = ["rho", "k", "c_IC"]
+    az.plot_trace(trace, var_names=var_names)
+
+```
+
+
+```{python}
+fig, ax = plt.subplots(figsize=(12, 4))
+plot_inference(ax, trace, title=f"Data and Inference Model Runs\n{sampler} Sampler");
+
+```
+
+```{python}
+
+plot_trace(trace)
+
+```
+
+
+# Adding in RT
+
+
+Along with the standard linear quadratic model for radiotherapy
+$$
+S(d) = \text{exp} (- \alpha d - \beta d)
+$$
+
+where $d$ is the dose of radiation in Gray (Gy) and we assume the fixed ratio $\alpha / \beta = 10$
+
+The probabilistic parameters we will consider are therefore
+
+
