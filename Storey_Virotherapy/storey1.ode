@@ -1,0 +1,57 @@
+# Modeling Oncolytic Viral Therapy, Immune Checkpoint Inhibition, and the Complex Dynamics of Innate and Adaptive Immunity in Glioblastoma Treatment
+# https://doi.org/10.3389/fphys.2020.00151
+#
+#  Inspired by this related Journal Club paper on an agent-based model for similar virotherapy 
+# An Agent-Based Model of Combination Oncolytic Viral Therapy and Anti-PD-1 Immunotherapy Reveals the Importance of Spatial Location When Treating Glioblastoma
+# https://doi.org/10.3390/cancers13215314
+
+p rt=0.0192
+p CT=5.157e8
+p beta=2.5e-9
+p deltaT=0.0555555
+p omega=0.025
+p bT=50
+p aZ=2.4e-6
+p aZV=0.1
+p deltaZ=0.008
+p deltaYT=3.75e-4
+p deltaYV=5.54e-3
+p kI=0.02
+p kVZ=0.005
+p kTA=0.04166666
+p kIA=0.04166666
+p kVA=1e-5
+p aTZ=0.025
+p aVZ=0.025
+p aAT=0.0016
+p aAI=0.025
+p hT=2.7e4
+p hI=1e4
+p KYQ=1.296e-9
+p rhoP=1.259e-11
+p rhoL=2.510e-11
+p epsilonT=10
+p epsilonZ=10
+p sZR=0.08
+p aZZ=0.01
+p deltaZR=0.12
+
+p deltaA=0.0019
+p muPA=8.945
+
+F(P,L)=1/(1+P*L/KYQ)
+
+Ts'=rt*Ts*(1-(Ts+TI)/CT) - beta*Ts*V - kTA*YT*Ts/(hT+Ts)
+TI'=beta*Ts*V - deltaT*TI - kI*TI*Z/(hI+Z) - kTA*YT*TI/(hI+TI) - kIA*YV*TI/(hI+TI)
+V'=bT*deltaT*TI - kVZ*V*Z - kVA*V*YV - omega*V
+Z'=sZR*(aZZ*Z+aZV*V)/(deltaZR+aZZ*Z+aZV*V) + aZ*TI*Z - deltaZ*Z
+YTprime=(aTZ*Z + aAT*YT*(Ts+TI)/(hT+Ts+TI))*F(P,L) - deltaYT*YT
+YVprime=(aVZ*Z+aAI*YV*TI/(hI+TI))*F(P,L) - deltaYV*YV
+YT'=YTprime
+YV'=YVprime
+P'=rhoP*(YTprime+YVprime)
+L=rhoL*(YT+YV+epsilonT*(Ts+TI)+epsilonZ*Z)
+
+init Ts=1e5,TI=0,V=1e7,Z=0,YT=0,YV=0,P=0
+
+@ TOTAL=700,BOUND=1e10,YHI=5.2e8,MAXSTOR=100000,METH=qualrk
