@@ -1,0 +1,286 @@
+---
+title: Davis and Othmer & Stevens random walks
+authors:
+  - name: Markus Owen
+format: 
+  html:
+    embed-resources: true
+    code-fold: true
+    number-sections: true
+    toc: true
+    toc-depth: 3
+    date: now
+    date-modified: last-modified
+    date-format: "MMMM DD, YYYY, HH:mm:ss"
+  pdf: 
+    number-sections: true
+    colorlinks: true
+execute:
+  echo: true
+jupyter: python3
+---
+
+# Introduction
+
+From Aggregation, Blowup, and Collapse: The ABC's of Taxis in Reinforced Random Walks, Hans G. Othmer and Angela Stevens [https://doi.org/10.1137/S0036139995288976](https://doi.org/10.1137/S0036139995288976). 
+
+
+# Implementing the random walk model from Davis 1990
+
+The model is for a single cell (e.g. bacterium) which jumps left or right with probability depending on the weight of the edge between lattice sites. Each time the cell makes a jump along an edge, it deposits a signal on that edge. If there are $N$ sites, there should be $N-1$ edges. 
+
+```{python}
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy import stats
+```
+
+The first (zeroth) entry in $w$ is the first edge between sites $0$ and $1$ (using Python zero indexing). So a move to the left from $i$ to $i-1$ should increment edge $i-1$, a move to the right from $i$ to $i+1$ should increment edge $i$. 
+
+Initially there is a weight on each interval $(i, i+ 1), i \in \mathbb{Z}$, which is equal to 1.
+
+If at time $n$ an interval has been crossed by the particle exactly $k$ times, its weight will be $w=1+\sum_{j=1}^k a_j$, where $a_j \ge 0$, $j = 1,\dots,k$. 
+
+If $(X_0, X_1, \dots, X_n) = (i_0, i_1, \dots, i_n)$ are given, then the probability that $X_{n+1}$ is $i_{n−1}$ (move to left) or $i_{n + 1}$ (move to right) is proportional to the weights at time $n$ of the intervals $(i_{n−1}, i_n)$ and $(i_n, i_{n + 1})$.
+
+$$
+p_l = \frac{w_{n-1}}{w_{n-1}+w_{n}}
+$$
+where we take the convention that $w_i$ is the weight associated with the interval $(i_{n}, i_{n+1})$
+
+```{python}
+def sim_walk(x0,w,a,N,nt):
+    n_moves = np.zeros(N-1,dtype=np.int64) # number of moves across each edge
+    x = []
+    x.append(x0)
+    p = []
+    n_left = 0
+    for i in np.arange(nt): 
+        r = rng.uniform()
+        p_left = w[x[-1]-1]/(w[x[-1]-1]+w[x[-1]])
+        p.append(p_left)
+        if r<p_left:
+            # move left
+            x.append(x[-1]-1)
+            if (x[-1] == 0 | x[-1] == N-1): 
+                print(f'Reached the boundary, x={x[-1]}')
+            n_moves[x[-1]-1] += 1
+            w[x[-1]-1] += a[n_moves[x[-1]-1]]
+            n_left += 1
+        else:
+            # move right
+            x.append(x[-1]+1)
+            n_moves[x[-1]] += 1
+            w[x[-1]] += a[n_moves[x[-1]]]
+    return x,n_moves,w,p,n_left
+
+```
+## First test with zero weight increments (simple diffusion)
+
+The vector of weights $\mathbf{a}$ may need to have as many as $n_t$ elements in case the same edge is crossed repeatedly. 
+
+Here we set $\mathbf{a}=\mathbf{0}$ so the walk is unbiased, $p_l=p_r=0.5$ always. 
+
+```{python}
+N = 201 # number of lattice sites
+w = np.ones(N-1) # initial weight at each edge
+nt = 20 # number of time steps
+x0 = int((N-1)/2)
+rng = np.random.default_rng(12345)
+a = 0.0*np.ones(nt) # weight to add for each move
+```
+
+```{python}
+x,n_moves,w,p,n_left = sim_walk(x0,w,a,N,nt)
+```
+
+```{python}
+fig, ax = plt.subplots(3,1)
+ax[0].plot(x,'-x')
+ax[1].plot(n_moves,'-x')
+ax[2].plot(w,'-x')
+ax[2].set_ylabel('Edge Weights')
+plt.show()
+```
+
+```{python}
+plt.hist(p,bins=20,density=True)
+plt.title('Histogram of $p_{l}$')
+plt.show()
+```
+
+### Run for longer
+
+```{python}
+N = 201 # number of lattice sites
+w = np.ones(N-1) # initial weight at each edge
+nt = 10000 # number of time steps
+x0 = int((N-1)/2)
+rng = np.random.default_rng(12345)
+a = 0.0*np.ones(nt) # weight to add for each move
+```
+
+```{python}
+x,n_moves,w,p,n_left = sim_walk(x0,w,a,N,nt)
+```
+
+```{python}
+fig, ax = plt.subplots(3,1)
+ax[0].plot(x,'-x')
+ax[1].plot(n_moves,'-x')
+ax[2].plot(w,'-x')
+ax[2].set_ylabel('Edge Weights')
+plt.show()
+```
+
+```{python}
+plt.hist(p,bins=20,density=True)
+plt.title('Histogram of $p_{l}$')
+plt.show()
+```
+
+## Run many times and store final positions
+
+```{python}
+N = 201 # number of lattice sites
+w0 = np.ones(N-1) # initial weight at each edge
+nt = 400 # number of time steps
+x0 = int((N-1)/2)
+rng = np.random.default_rng(12345)
+a = 0.0*np.ones(nt) # weight to add for each move
+```
+
+```{python}
+x_store = []
+n_lefts = []
+for i in np.arange(10000): 
+    w = w0
+    x,n_moves,w,p,n_left = sim_walk(x0,w,a,N,nt)
+    x_store.append(x[-1])
+    n_lefts.append(n_left)
+```
+
+The end position should be normally distributed about the starting point $x=x_0$, and the number of moves left should be normally distributed about a mean of $n_t/2$ (with the unbiased walk, half the steps should be left, on average): 
+
+```{python}
+fig, ax = plt.subplots(2,1)
+ax[0].plot(x_store,'*')
+ax[0].set_ylabel('$x_{end}$')
+ax[1].plot(n_lefts,'*')
+ax[1].set_ylabel('Moves to left: $n_{l}$')
+plt.show()
+```
+
+Histogram of final position with test of normality: 
+
+```{python}
+res = stats.normaltest(x_store)
+plt.hist(x_store,bins=np.linspace(-0.5,N-0.5,N+1),density=True)
+plt.title(f'Histogram of $x_{{end}}$, normaltest p={float('%.3g' % res.pvalue)}')
+plt.show()
+```
+
+
+## Second test with constant weight increments
+
+```{python}
+N = 101 # number of lattice sites
+w = np.ones(N-1) # initial weight at each edge
+nt = 10000 # number of time steps
+x0 = int((N-1)/2)
+rng = np.random.default_rng(12345)
+a = 0.2*np.ones(nt) # weight to add for each move
+```
+
+```{python}
+x,n_moves,w,p,n_left = sim_walk(x0,w,a,N,nt)
+```
+
+```{python}
+fig, ax = plt.subplots(3,1)
+ax[0].plot(x,'-x')
+ax[1].plot(n_moves,'-x')
+ax[2].plot(w,'-x')
+ax[2].set_ylabel('Edge Weights')
+plt.show()
+```
+
+```{python}
+plt.hist(p,bins=20,density=True)
+plt.title('Histogram of $p_{l}$')
+plt.show()
+```
+
+
+## Same with faster (quadratic) weight growth
+
+```{python}
+N = 101 # number of lattice sites
+w = np.ones(N-1) # initial weight at each edge
+nt = 1000 # number of time steps
+x0 = int((N-1)/2)
+rng = np.random.default_rng(12345)
+a = np.arange(nt)**2+1
+```
+
+```{python}
+x,n_moves,w,p,n_left = sim_walk(x0,w,a,N,nt)
+```
+
+```{python}
+fig, ax = plt.subplots(3,1)
+ax[0].plot(x,'-x')
+ax[1].plot(n_moves,'-x')
+ax[2].plot(w,'-x')
+plt.show()
+```
+
+```{python}
+plt.hist(p,bins=20,density=True)
+plt.title('Histogram of $p_{l}$')
+plt.show()
+```
+
+To reach a limit where the state switches constantly between $n$ and $n+1$ the weights must reach a state where there are two adjacent points with very large values and either side of that the values are negligible. Something like $(0,\cdots,0,\epsilon,M,M,\epsilon,0,\cdots,0)$. This would mean the probability of a left (right) move from the first (second) location with $w=M$ is $p_{l(r)}=\epsilon/(\epsilon+M) \approx 0$ and a right (left) move is $p_{r(l)}=M/(\epsilon+M) \approx 1$. 
+
+## Same with superlinear but less than quadratic weight growth
+
+This uses the case described in Othmer and Stephens, with $a_j=j$. 
+```{python}
+N = 101 # number of lattice sites
+w = np.ones(N-1) # initial weight at each edge
+nt = 100 # number of time steps
+x0 = int((N-1)/2)
+rng = np.random.default_rng(12345)
+a = np.arange(nt)**3+1
+```
+
+```{python}
+x,n_moves,w,p,n_left = sim_walk(x0,w,a,N,nt)
+```
+
+```{python}
+fig, ax = plt.subplots(3,1)
+ax[0].plot(np.arange(nt-100,nt)+1,x[-100:],'-x')
+ax[0].set_xlabel('Time step')
+ax[0].set_ylabel(r'Position, $X_t$')
+ax[1].plot(n_moves,'-x')
+ax[1].set_xlabel('Position')
+ax[1].set_ylabel('Moves')
+ax[2].plot(w,'-x')
+ax[2].set_xlabel('Position')
+ax[2].set_ylabel(r'Weights, $\mathbf{w}$')
+plt.show()
+```
+
+```{python}
+plt.hist(p,bins=20,density=True)
+plt.title('Histogram of $p_{l}$')
+plt.show()
+```
+
+# Implementing the modified random walk model due to Othmer and Stevens
+
+This random walk is similar but the weights are placed at lattice sites instead of on edges between sites. 
+
+NOT IMPLEMENTED YET. 
