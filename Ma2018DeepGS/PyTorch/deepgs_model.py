@@ -87,9 +87,9 @@ class DeepGSModel(nn.Module):
         self.fc_stack = nn.Sequential(*fc_layers)
 
     def forward(self, x):
-        print('x:',x.shape)
+        # print('x:',x.shape)
         x = self.conv_stack(x)
-        print('x-conv: ',x.shape)
+        # print('x-conv: ',x.shape)
         x = torch.flatten(x, 1)
-        print('x-flat: ',x.shape)
+        # print('x-flat: ',x.shape)
         return self.fc_stack(x)

@@ -1,0 +1,327 @@
+---
+title: DeepGS PyTorch implementation
+authors:
+  - name: Markus Owen
+format: 
+  html:
+    embed-resources: true
+    code-fold: true
+    number-sections: true
+    toc: true
+    toc-depth: 3
+    date: now
+    date-modified: last-modified
+    date-format: "MMMM DD, YYYY, HH:mm:ss"
+  pdf: 
+    number-sections: true
+    colorlinks: true
+execute:
+  echo: true
+jupyter: python3
+---
+
+```{python}
+# package imports
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import os
+import numpy as np
+from datetime import datetime
+import matplotlib.pyplot as plt
+from sklearn import linear_model
+# import rdata
+
+# local imports
+from deepgs_model import DeepGSModel
+from diagnostics import plot_actual_vs_predicted, evaluate_model, plot_both_vs_marker
+from data_loader import load_data, load_wheat_data, generate_synthetic_data, cvSampleIndex
+from train_deepgs import train_deepGSModel
+from config import cnnFrame
+
+import run_training
+```
+
+
+## Generate training data
+
+```{python}
+trainMat, trainPheno, validMat, validPheno, markerImage = generate_synthetic_data(rng_seed=1)
+```
+
+## Train the DeepGS model
+
+```{python}
+device = "cuda" if torch.cuda.is_available() else "cpu"
+if torch.backends.mps.is_available():
+    device = torch.device("mps")
+else:
+    print ("MPS device not found.")
+
+model = train_deepGSModel(
+    trainMat=trainMat,
+    trainPheno=trainPheno,
+    validMat=validMat,
+    validPheno=validPheno,
+    markerImage=markerImage,
+    cnnFrame=cnnFrame,
+    device=device,
+    eval_metric="mae",
+    num_round=600,
+    batch_size=32,
+    learning_rate=0.001,
+    patience=10000
+)
+
+print("Training complete.")
+print(model)
+```
+
+The above codes writes the best model to file. We will load it and make some plots. 
+
+```{python}
+device = "cuda" if torch.cuda.is_available() else "cpu"
+if torch.backends.mps.is_available():
+    device = torch.device("mps")
+else:
+    print ("MPS device not found.")
+```
+
+
+## Try using LASSO regression to fit a linear model
+
+```{python}
+lasso_model = linear_model.Lasso(alpha=0.1)
+lasso_model.fit(trainMat.T,trainPheno.T)
+```
+
+Plot the LASSO coefficients: 
+```{python}
+plt.plot(lasso_model.coef_)
+plt.xlabel('Markers')
+plt.ylabel('LASSO coefficients')
+plt.show()
+```
+
+Plot the model predictions vs true values of training data:  
+```{python}
+plt.plot(trainPheno.T,lasso_model.predict(trainMat.T),'+b',label='Training')
+plt.plot(validPheno.T,lasso_model.predict(validMat.T),'xr',label='Validation')
+plt.axline((0, 0), slope=1)
+plt.xlabel('Data')
+plt.ylabel('LASSO model prediction')
+plt.legend()
+plt.show()
+```
+
+For `alpha=0.1` the fit isn't very good and we know the true coefficient values should be 1. Using `alpha=0.01` gives much better results: 
+```{python}
+lasso_model = linear_model.Lasso(alpha=0.01)
+lasso_model.fit(trainMat.T,trainPheno.T)
+```
+
+Plot the LASSO coefficients: 
+```{python}
+plt.plot(lasso_model.coef_)
+plt.xlabel('Markers')
+plt.ylabel('LASSO coefficients')
+plt.show()
+```
+
+Plot the model predictions vs true values of training data:  
+```{python}
+plt.plot(trainPheno.T,lasso_model.predict(trainMat.T),'+b',label='Training')
+plt.plot(validPheno.T,lasso_model.predict(validMat.T),'xr',label='Validation')
+plt.axline((0, 0), slope=1)
+plt.xlabel('Data')
+plt.ylabel('LASSO model prediction')
+plt.title('LASSO fit, alpha=0.01')
+plt.legend()
+plt.show()
+```
+
+### Can we do better using cross-validation to select `alpha`?
+```{python}
+lassoCV_model = linear_model.LassoCV(cv=5,random_state=0)
+lassoCV_model.fit(trainMat.T,trainPheno.T)
+```
+
+```{python}
+plt.plot(lassoCV_model.coef_)
+plt.xlabel('Markers')
+plt.ylabel('LASSO coefficients')
+plt.show()
+```
+
+Plot the model predictions vs true values of training data:  
+```{python}
+plt.plot(trainPheno.T,lassoCV_model.predict(trainMat.T),'+b',label='Training')
+plt.plot(validPheno.T,lassoCV_model.predict(validMat.T),'xr',label='Validation')
+plt.axline((0, 0), slope=1)
+plt.xlabel('Data')
+plt.ylabel('LassoCV model prediction')
+plt.title(r'LASSO CV fit, alpha=%.3g' % lassoCV_model.alpha_)
+plt.legend()
+plt.show()
+```
+
+## Now try with more markers
+
+```{python}
+trainMat, trainPheno, validMat, validPheno, markerImage = generate_synthetic_data(rng_seed=1,n_markers=1000)
+```
+
+Using cross-validation to select `alpha`.
+```{python}
+lassoCV_model = linear_model.LassoCV(cv=5,random_state=0)
+lassoCV_model.fit(trainMat.T,trainPheno.T)
+```
+
+Plot the model coefficients: 
+
+```{python}
+plt.plot(lassoCV_model.coef_)
+plt.xlabel('Markers')
+plt.ylabel('LASSO coefficients')
+plt.show()
+```
+
+Plot the model predictions vs true values of training data:  
+```{python}
+plt.plot(trainPheno.T,lassoCV_model.predict(trainMat.T),'+b',label='Training')
+plt.plot(validPheno.T,lassoCV_model.predict(validMat.T),'xr',label='Validation')
+plt.axline((0, 0), slope=1)
+plt.xlabel('Data')
+plt.ylabel('LassoCV model prediction')
+plt.title(r'LASSO CV fit, alpha=%.3g' % lassoCV_model.alpha_)
+plt.legend()
+plt.show()
+```
+
+## Do something with the DeepGS test data
+
+```{python}
+converted = rdata.read_rda("../data/wheat_example.rda")
+```
+
+Plot all the phenotype data, sorted to give a sense of the distribution: 
+
+```{python}
+plt.plot(np.sort(converted['wheat_example']['y']),'*')
+plt.show()
+```
+
+Show the genotype data as an image: 
+
+```{python}
+plt.imshow(converted['wheat_example']['Markers'])
+plt.show()
+```
+
+```{python}
+lassoCV_model_wheat = linear_model.LassoCV(cv=5,random_state=0)
+lassoCV_model_wheat.fit(converted['wheat_example']['Markers'],converted['wheat_example']['y'])
+```
+
+Plot the model coefficients: 
+
+```{python}
+plt.plot(lassoCV_model_wheat.coef_)
+plt.xlabel('Markers')
+plt.ylabel('LASSO coefficients')
+plt.show()
+```
+
+Plot the model predictions vs true values of training data:  
+```{python}
+plt.plot(converted['wheat_example']['y'],lassoCV_model_wheat.predict(converted['wheat_example']['Markers']),'+b',label='Training')
+# plt.plot(validPheno.T,lassoCV_model.predict(validMat.T),'xr',label='Validation')
+plt.axline((0, 0), slope=1)
+plt.xlabel('Data')
+plt.ylabel('LassoCV model prediction')
+plt.title(r'LASSO CV fit, alpha=%.3g' % lassoCV_model_wheat.alpha_)
+plt.legend()
+plt.show()
+```
+
+### Try with fixed alpha
+
+```{python}
+lasso_model_wheat = linear_model.Lasso(alpha=0.025)
+lasso_model_wheat.fit(converted['wheat_example']['Markers'],converted['wheat_example']['y'])
+```
+
+Plot the model coefficients: 
+
+```{python}
+plt.plot(lasso_model_wheat.coef_)
+plt.xlabel('Markers')
+plt.ylabel('LASSO coefficients')
+plt.show()
+```
+
+Plot the model predictions vs true values of training data:  
+```{python}
+plt.plot(converted['wheat_example']['y'],lasso_model_wheat.predict(converted['wheat_example']['Markers']),'+b',label='Training')
+# plt.plot(validPheno.T,lassoCV_model.predict(validMat.T),'xr',label='Validation')
+plt.axline((0, 0), slope=1)
+plt.xlabel('Data')
+plt.ylabel('LassoCV model prediction')
+plt.title(r'LASSO CV fit, fixed alpha=0.1')
+plt.legend()
+plt.show()
+```
+
+# CNN with wheat data
+
+
+```{python}
+trainMat, trainPheno, validMat, validPheno, markerImage = load_wheat_data()
+```
+
+## Train the DeepGS model
+
+```{python}
+device = "cuda" if torch.cuda.is_available() else "cpu"
+if torch.backends.mps.is_available():
+    device = torch.device("mps")
+else:
+    print ("MPS device not found.")
+
+model = train_deepGSModel(
+    trainMat=trainMat.T,
+    trainPheno=trainPheno.T,
+    validMat=validMat.T,
+    validPheno=validPheno.T,
+    markerImage=markerImage,
+    cnnFrame=cnnFrame,
+    device=device,
+    eval_metric="mae",
+    num_round=6000,
+    batch_size=32,
+    learning_rate=0.001,
+    patience=10000
+)
+
+print("Training complete.")
+print(model)
+```
+
+The above codes writes the best model to file. We will load it and make some plots. 
+
+```{python}
+H, W = markerImage
+model.eval()
+# Train predictions
+train_true, train_pred = evaluate_model(
+    model, trainMat.T.reshape(-1, 1, H, W), trainPheno.T, markerImage, device=device)
+
+save_path="saved_models"
+datetime_str = datetime.now().strftime("_%Y%m%d_%H%M%S")
+
+plot_actual_vs_predicted(
+        train_true, train_pred,
+        title="Train: Actual vs Predicted",
+        save_path=f"{save_path}/train_actual_vs_predicted{datetime_str}.png"
+    )
+```

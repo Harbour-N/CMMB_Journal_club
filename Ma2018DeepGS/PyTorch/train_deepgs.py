@@ -27,9 +27,9 @@ def train_deepGSModel(
     trainMat = trainMat.T.reshape(-1, 1, H, W)
     validMat = validMat.T.reshape(-1, 1, H, W)
 
-    train_tensor = torch.tensor(trainMat, dtype=torch.float32)
-    valid_tensor = torch.tensor(validMat, dtype=torch.float32)
-    y_train = torch.tensor(trainPheno, dtype=torch.float32).view(-1, 1)
+    train_tensor = torch.tensor(trainMat, dtype=torch.float32).to(device)
+    valid_tensor = torch.tensor(validMat, dtype=torch.float32).to(device)
+    y_train = torch.tensor(trainPheno, dtype=torch.float32).view(-1, 1).to(device)
     y_valid = torch.tensor(validPheno, dtype=torch.float32).view(-1, 1)
 
     model = DeepGSModel(cnnFrame, markerImage).to(device)
@@ -88,7 +88,7 @@ def train_deepGSModel(
             val_loss = criterion(pred_valid, y_valid.to(device)).item()
         if verbose and epoch % 100 == 0:
             print(f"Epoch {epoch}, best val loss {eval_metric}: {best_loss:.4f}, train loss {eval_metric}: {train_loss:.4f}, val loss {eval_metric}: {val_loss:.4f}")
-            print(torch.mean(np.abs(pred_train-y_train)))
+            print(torch.mean(torch.abs(pred_train-y_train)))
 
     # ----- Diagnostics after training -----
 
