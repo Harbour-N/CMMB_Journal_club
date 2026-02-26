@@ -11,30 +11,39 @@ def load_data(save_path="saved_models"):
     markerImage = (1, n_markers)  # update based on your data!
     return trainMat, trainPheno, validMat, validPheno, markerImage
 
-def load_wheat_data(save_path="saved_models",rngSeed=0):
+# load wheat and split into train-validation set and test set
+def load_wheat_data(save_path="saved_models",rngSeed=0,randomise=True):
     converted = rdata.read_rda("../data/wheat_example.rda")
     Markers = converted['wheat_example']['Markers'].values
     y = converted['wheat_example']['y'].values
-    cvSampleList = cvSampleIndex(len(y),10)
 
-    cvIdx = 0
-    trainIdx = cvSampleList[cvIdx]['trainIdx']
-    testIdx = cvSampleList[cvIdx]['testIdx']
+    if (randomise): 
+        cvSampleList = cvSampleIndex(len(y),10)
+        cvIdx = 0
+        trainIdx = cvSampleList[cvIdx]['trainIdx']
+        testIdx = cvSampleList[cvIdx]['testIdx']
+        rng = np.random.default_rng(rngSeed)
+        index = rng.choice(len(trainIdx),int(len(trainIdx)*0.1),replace=False)
+    else: 
+        trainIdx = np.arange(int(len(y)*0.9))
+        testIdx = np.arange(int(len(y)*0.9),int(len(y)))
+        index = np.arange(int(len(trainIdx)*0.1))
+
     trainMat = Markers[trainIdx,]
     trainPheno = y[trainIdx]
-
-    rng = np.random.default_rng(rngSeed)
-    index = rng.choice(len(trainIdx),int(len(trainIdx)*0.1),replace=False)
     mask = np.ones_like(trainIdx, dtype=bool)
     mask[index] = False # set the chosen 10% of indices to False
+
     validMat = trainMat[~mask]
     validPheno = trainPheno[~mask]
     trainMat = trainMat[mask,]
     trainPheno = trainPheno[mask]
+    testMat = Markers[testIdx,]
+    testPheno = y[testIdx]
 
     n_markers = Markers.shape[1]
     markerImage = (1, n_markers)  # update based on your data!
-    return trainMat, trainPheno, validMat, validPheno, markerImage
+    return trainMat, trainPheno, validMat, validPheno, testMat, testPheno, markerImage
 
 
 ########################generate train idx and test idx ##########################
@@ -90,25 +99,18 @@ def cvSampleIndex(sampleNum, cv = 5, rngSeed = 1):
     return(resList)
 
 
-def generate_synthetic_data(n_markers=50,rng_seed=0,save_path="saved_models"):
+def generate_synthetic_data(n_markers=50,n_train=400,n_valid=40,rng_seed=0,save_path="saved_models"):
     rng = np.random.default_rng(rng_seed)
-    n_train = 400
-    n_valid = 40
-    # n_markers = 784
-    # n_markers = 50
-    # n_markers = 2048
 
-    allMat = rng.choice(2,(n_markers,n_train+n_valid))
+    allMat = rng.choice(2,(n_train+n_valid,n_markers))
 
-    trainMat = rng.choice(2,(n_markers,n_train))
-    validMat = rng.choice(2,(n_markers,n_valid))
-    trainMat = allMat[:,0:n_train]
-    validMat = allMat[:,n_train:]
-    betas = np.zeros((1,n_markers))
+    trainMat = allMat[0:n_train,]
+    validMat = allMat[n_train:,]
+    betas = np.zeros(n_markers)
     # betas[[10,20,30]] = 1
     active_markers = [30]
     active_markers = [10,20,30]
-    betas[0,active_markers] = 1
+    betas[active_markers] = 1
     # betas[0][[10,20,30]]=1
     # trainPheno = trainMat @ betas + 0.0*rng.standard_normal((n_train,1),)
     # validPheno = validMat @ betas + 0.0*rng.standard_normal((n_valid,1),)
@@ -117,14 +119,14 @@ def generate_synthetic_data(n_markers=50,rng_seed=0,save_path="saved_models"):
     # trainMat = rng.random((1,n_train)) + 0.0*rng.standard_normal((n_markers,n_train))
     # validMat = rng.random((1,n_valid)) + 0.0*rng.standard_normal((n_markers,n_valid))
     # betas = np.ones((1,n_markers))
-    trainPheno = betas @ trainMat + 0.01*rng.standard_normal((1,n_train),)
-    validPheno = betas @ validMat + 0.01*rng.standard_normal((1,n_valid),)
+    trainPheno = trainMat @ betas + 0.01*rng.standard_normal(n_train)
+    validPheno = validMat @ betas + 0.01*rng.standard_normal(n_valid)
 
     markerImage = (1, n_markers)  # update based on your data!
 
     plt.figure(figsize=(6, 6))
-    plt.scatter(trainMat[active_markers[0],:], trainPheno, alpha=0.6, label='Train')
-    plt.scatter(validMat[active_markers[0],:], validPheno, alpha=0.6, label='Validate')
+    plt.scatter(trainMat[:,active_markers[0]], trainPheno, alpha=0.6, label='Train')
+    plt.scatter(validMat[:,active_markers[0]], validPheno, alpha=0.6, label='Validate')
     plt.xlabel("Marker value")
     plt.ylabel("Phenotype")
     plt.title('Data validation')

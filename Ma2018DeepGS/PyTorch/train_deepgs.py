@@ -8,6 +8,8 @@ from diagnostics import plot_actual_vs_predicted, evaluate_model, plot_both_vs_m
 import numpy as np
 from datetime import datetime
 
+# trainMat, validMat (n_samples x n_markers)
+# trainPheno, validPheno (n_samples x 1)
 def train_deepGSModel(
     trainMat, trainPheno, validMat, validPheno,
     markerImage, cnnFrame,
@@ -23,12 +25,11 @@ def train_deepGSModel(
 
     # reshape to NCHW
     H, W = markerImage
-    trainMatStore = trainMat
-    trainMat = trainMat.T.reshape(-1, 1, H, W)
-    validMat = validMat.T.reshape(-1, 1, H, W)
+    trainMat4D = trainMat.reshape(-1, 1, H, W)
+    validMat4D = validMat.reshape(-1, 1, H, W)
 
-    train_tensor = torch.tensor(trainMat, dtype=torch.float32).to(device)
-    valid_tensor = torch.tensor(validMat, dtype=torch.float32).to(device)
+    train_tensor = torch.tensor(trainMat4D, dtype=torch.float32).to(device)
+    valid_tensor = torch.tensor(validMat4D, dtype=torch.float32).to(device)
     y_train = torch.tensor(trainPheno, dtype=torch.float32).view(-1, 1).to(device)
     y_valid = torch.tensor(validPheno, dtype=torch.float32).view(-1, 1)
 
@@ -99,6 +100,10 @@ def train_deepGSModel(
     else:
         print("Can't load best model.")
 
+    for parameter in model.parameters():
+        print(parameter.data.shape)
+        print(parameter.data)
+
     model.eval()
     # Train predictions
     train_true, train_pred = evaluate_model(
@@ -134,12 +139,13 @@ def train_deepGSModel(
     # print(trainMatStore.shape)
     # print(trainMatStore[:,30].T)
     # print(train_true.T)
-    plot_both_vs_marker(trainMat[:,:,:,30],
+    print(trainMat[:,30].shape,train_true.shape)
+    plot_both_vs_marker(trainMat[:,30],
         train_true, train_pred,
         title="Train: Pheno vs Marker",
         save_path=f"{save_path}/train_pheno_vs_marker{datetime_str}.png"
     )
-    plot_both_vs_marker(validMat[:,:,:,30],
+    plot_both_vs_marker(validMat[:,30],
         valid_true, valid_pred,
         title="Validation: Pheno vs Marker",
         save_path=f"{save_path}/valid_pheno_vs_marker{datetime_str}.png"

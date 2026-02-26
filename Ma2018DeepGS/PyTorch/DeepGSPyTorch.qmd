@@ -20,6 +20,11 @@ execute:
 jupyter: python3
 ---
 
+# Introduction
+
+This Quarto document relates to [A deep convolutional neural network approach for predicting phenotypes from genotypes](https://doi.org/10.1007/s00425-018-2976-9). 
+
+
 ```{python}
 # package imports
 import torch
@@ -30,26 +35,227 @@ import numpy as np
 from datetime import datetime
 import matplotlib.pyplot as plt
 from sklearn import linear_model
-# import rdata
+import rdata
 
 # local imports
 from deepgs_model import DeepGSModel
 from diagnostics import plot_actual_vs_predicted, evaluate_model, plot_both_vs_marker
-from data_loader import load_data, load_wheat_data, generate_synthetic_data, cvSampleIndex
+import data_loader
 from train_deepgs import train_deepGSModel
 from config import cnnFrame
 
 import run_training
 ```
 
+# R implementation
+
+This uses a Docker image at the moment. [mxnet](https://mxnet.apache.org) is no longer supported and I haven't been able to install it within an up to date R setup. 
+
+The following commands and comments relate to running in Docker, adapting instructions from [DeepGS_User_Manual.pdf](https://github.com/cma2015/DeepGS/blob/master/DeepGS_User_Manual.pdf): 
+
+```
+docker run -it malab/deepgs_cpu R
+```
+
+```r
+library(DeepGS)
+setwd("/home/data/")
+```
+
+```r
+# This command is from data_process.R
+# This b is never used, it is for too many samples
+# Below it is used with length(y) to sample from the dataset of phenotypes
+b <- cvSampleIndex(sampleNum = 2000, cross = 5, seed = 1)
+
+
+data(wheat_example)
+Markers <- wheat_example$Markers
+y <- wheat_example$y
+# generate a set of samples (90:10 split)
+cvSampleList <- cvSampleIndex(length(y),10,1)
+
+# cross validation set
+cvIdx <- 1
+trainIdx <- cvSampleList[[cvIdx]]$trainIdx
+testIdx <- cvSampleList[[cvIdx]]$testIdx
+trainMat <- Markers[trainIdx,]
+trainPheno <- y[trainIdx]
+testMat <- Markers[testIdx,]
+testPheno <- y[testIdx]
+validIdx <- sample(1:length(trainIdx),floor(length(trainIdx)*0.1))
+validMat <- trainMat[validIdx,]
+validPheno <- trainPheno[validIdx]
+trainMat <- trainMat[-validIdx,]
+trainPheno <- trainPheno[-validIdx]
+conv_kernel <- c("1*18") ## convolution kernels (fileter shape)
+conv_stride <- c("1*1")
+conv_num_filter <- c(8) ## number of filters
+pool_act_type <- c("relu") ## active function for next pool
+pool_type <- c("max") ## max pooling shape
+pool_kernel <- c("1*4") ## pooling shape
+pool_stride <- c("1*4") ## number of pool kernerls
+fullayer_num_hidden <- c(32,1)
+fullayer_act_type <- c("sigmoid")
+drop_float <- c(0.2,0.1,0.05)
+
+
+
+cnnFrame <- list(conv_kernel = conv_kernel, conv_num_filter = conv_num_filter, conv_stride = conv_stride, pool_act_type = pool_act_type, pool_type = pool_type, pool_kernel =pool_kernel, pool_stride = pool_stride, fullayer_num_hidden_= fullayer_num_hidden, fullayer_act_type = fullayer_act_type, drop_float = drop_float)
+
+markerImage = paste0("1*",ncol(trainMat))
+
+trainGSmodel <- train_deepGSModel(trainMat = trainMat, trainPheno = trainPheno, validMat = validMat, validPheno = validPheno, markerImage = markerImage, cnnFrame = cnnFrame, device_type = "cpu", gpuNum = 1, eval_metric = "mae", num_round = 6000, array_batch_size =  30, learning_rate = 0.01, momentum = 0.5, wd = 0.00001, randomseeds = 0, initializer_idx = 0.01, verbose = TRUE)
+
+
+After completion: 
+
+predscores <- predict_GSModel(GSModel = trainGSmodel,testMat = Markers[testIdx,], markerImage = markerImage )
+
+png(filename="test_pred_v_true_20260223_1545.png")
+plot(predscores,y[testIdx],xlab="Predicted",ylab="Actual") + abline(a=0, b=1)
+dev.off()
+
+Saving the model? What is the model stored as? 
+From here, https://www.rdocumentation.org/packages/base/versions/3.6.2/topics/function, 
+"If the end of a function is reached without calling return, the value of the last evaluated expression is returned."
+So the train_deepGSModel function returns the mxnet object called cnn.object, storing it as trainGSmodel. 
+
+Using
+https://stackoverflow.com/questions/43517960/how-to-save-a-model-when-using-mxnet
+
+
+trainGSmodelR <- mx.serialize(trainGSmodel)
+save(trainGSmodelR, file="model1.RData")        
+
+load("model1.RData", verbose=TRUE)
+model <- mx.unserialize(trainGSmodelR)
+
+Use this loaded model to predict and compare with existing prediction - they should be identical. 
+
+predscores2 <- predict_GSModel(GSModel = model,testMat = Markers[testIdx,], markerImage = markerImage )
+png(filename="test_predsaved_vs_pred.png")
+plot(predscores,predscores2,xlab="Predicted",ylab="Predicted (saved model)") + abline(a=0, b=1)
+dev.off()
+
+List variables so far: 
+> ls()
+ [1] "Markers"             "b"                   "cnnFrame"           
+ [4] "conv_kernel"         "conv_num_filter"     "conv_stride"        
+ [7] "cvIdx"               "cvSampleList"        "drop_float"         
+[10] "fullayer_act_type"   "fullayer_num_hidden" "markerImage"        
+[13] "model"               "mx.best.iter"        "mx.best.score"      
+[16] "pool_act_type"       "pool_kernel"         "pool_stride"        
+[19] "pool_type"           "predscores"          "predscores2"        
+[22] "testIdx"             "trainGSmodel"        "trainGSmodelR"      
+[25] "trainIdx"            "trainMat"            "trainPheno"         
+[28] "validIdx"            "validMat"            "validPheno"         
+[31] "wheat_example"       "y"                  
+
+
+Try plotting train, valid and test predictions
+
+pred_train <- predict_GSModel(GSModel = model,testMat = Markers[trainIdx,], markerImage = markerImage )
+pred_valid <- predict_GSModel(GSModel = model,testMat = Markers[validIdx,], markerImage = markerImage )
+pred_test <- predict_GSModel(GSModel = model,testMat = Markers[testIdx,], markerImage = markerImage )
+
+png(filename="test_pred_v_true_20260223_1623.png")
+plot(pred_train,y[trainIdx],pch=1,col="green",xlab="Predicted",ylab="Actual") + points(pred_valid,y[validIdx],pch=2,col="blue") + points(pred_test,y[testIdx],pch=3,col="red") + abline(a=0, b=1) 
+legend("topleft",c("Train","Validation","Test"),col=c("green","blue","red"),pch = c(1, 2, 3))
+dev.off()
+
+To see the structure of something: 
+srt(cvSampleList)
+
+```
+
+These prediction sets and plots aren't quite correct. `trainIdx` still includes validation points as `trainMat` is defined using `trainMat[-validIdx,]` and `trainIdx` doesn't have elements removed. Also in the above `trainIdx` and `testIdx` are indices into `Markers` but `validIdx` is indices into `trainMat`!
+
+```r
+pred_train <- predict_GSModel(GSModel = model,testMat = trainMat, markerImage = markerImage )
+pred_valid <- predict_GSModel(GSModel = model,testMat = validMat, markerImage = markerImage )
+pred_test <- predict_GSModel(GSModel = model,testMat = testMat, markerImage = markerImage )
+
+png(filename=format(Sys.time(), "test_pred_v_true_%y%m%d_%H%M.png"))
+plot(pred_train,trainPheno,pch=1,col="green",xlab="Predicted",ylab="Actual",xlim = c(1.05*min(trainPheno,validPheno,testPheno),1.05*max(trainPheno,validPheno,testPheno)), ylim = c(1.05*min(pred_train,pred_valid,pred_test),1.05*max(pred_train,pred_valid,pred_test))) + points(pred_valid,validPheno,pch=2,col="blue") + points(pred_test,testPheno,pch=3,col="red") + abline(a=0, b=1) 
+legend("topleft",c("Train","Validation","Test"),col=c("green","blue","red"),pch = c(1, 2, 3))
+dev.off()
+```
+
+## Manually choose the train-validation-test set
+
+```r
+data(wheat_example)
+Markers <- wheat_example$Markers
+y <- wheat_example$y
+# first 90% for training
+trainIdx <- 1:floor(length(y)*0.9)
+testIdx <- (1:length(y))[-trainIdx]
+trainMat <- Markers[trainIdx,]
+trainPheno <- y[trainIdx]
+testMat <- Markers[testIdx,]
+testPheno <- y[testIdx]
+# now split the train set into train-validate
+validIdx <- 1:floor(length(trainIdx)*0.1)
+validMat <- trainMat[validIdx,]
+validPheno <- trainPheno[validIdx]
+trainMat <- trainMat[-validIdx,]
+trainPheno <- trainPheno[-validIdx]
+# CNN structure
+conv_kernel <- c("1*18") ## convolution kernels (fileter shape)
+conv_stride <- c("1*1")
+conv_num_filter <- c(8) ## number of filters
+pool_act_type <- c("relu") ## active function for next pool
+pool_type <- c("max") ## max pooling shape
+pool_kernel <- c("1*4") ## pooling shape
+pool_stride <- c("1*4") ## number of pool kernerls
+fullayer_num_hidden <- c(32,1)
+fullayer_act_type <- c("sigmoid")
+drop_float <- c(0.2,0.1,0.05)
+
+
+
+cnnFrame <- list(conv_kernel = conv_kernel, conv_num_filter = conv_num_filter, conv_stride = conv_stride, pool_act_type = pool_act_type, pool_type = pool_type, pool_kernel =pool_kernel, pool_stride = pool_stride, fullayer_num_hidden_= fullayer_num_hidden, fullayer_act_type = fullayer_act_type, drop_float = drop_float)
+
+markerImage = paste0("1*",ncol(trainMat))
+
+trainGSmodel <- train_deepGSModel(trainMat = trainMat, trainPheno = trainPheno, validMat = validMat, validPheno = validPheno, markerImage = markerImage, cnnFrame = cnnFrame, device_type = "cpu", gpuNum = 1, eval_metric = "mae", num_round = 6000, array_batch_size =  30, learning_rate = 0.01, momentum = 0.5, wd = 0.00001, randomseeds = 0, initializer_idx = 0.01, verbose = TRUE)
+
+```
+
+# Python implementation
 
 ## Generate training data
 
 ```{python}
-trainMat, trainPheno, validMat, validPheno, markerImage = generate_synthetic_data(rng_seed=1)
+trainMat, trainPheno, validMat, validPheno, markerImage = data_loader.generate_synthetic_data(n_markers=1225,rng_seed=1)
 ```
 
 ## Train the DeepGS model
+
+```{python}
+cnnFrame = {
+    "conv_kernel": ["1*18"],        # kernel height=1, width=18
+    "conv_stride": ["1*1"],         # stride height=1, width=1
+    "conv_num_filter": [8],         # 8 convolution filters
+
+    "pool_act_type": ["relu"],      # ReLU after convolution
+    "pool_type": ["max"],           # max pooling
+    "pool_kernel": ["1*4"],         # pool over width=4
+    "pool_stride": ["1*4"],         # stride of pooling = 4
+
+    # Fully-connected layers: 32 units → 1 output neuron
+    "fullayer_num_hidden": [32, 1],
+    "fullayer_act_type": ["relu"],  # activation only for the first FC layer
+
+    # Dropout: must be 1 more entry than number of FC layers
+    # e.g. for FC = [32,1], you need drop_float = [drop_before_FC1, drop_before_FC2, drop_before_output]
+    "drop_float": [0.2, 0.1, 0.05]  # example values (tunable)
+    # "drop_float": [0.4, 0.2, 0.1]  # example values (tunable)
+    # "drop_float": [0.1, 0.05, 0.025]  # example values (tunable)
+}
+
+```
 
 ```{python}
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -92,7 +298,7 @@ else:
 
 ```{python}
 lasso_model = linear_model.Lasso(alpha=0.1)
-lasso_model.fit(trainMat.T,trainPheno.T)
+lasso_model.fit(trainMat,trainPheno)
 ```
 
 Plot the LASSO coefficients: 
@@ -105,8 +311,8 @@ plt.show()
 
 Plot the model predictions vs true values of training data:  
 ```{python}
-plt.plot(trainPheno.T,lasso_model.predict(trainMat.T),'+b',label='Training')
-plt.plot(validPheno.T,lasso_model.predict(validMat.T),'xr',label='Validation')
+plt.plot(trainPheno,lasso_model.predict(trainMat),'+b',label='Training')
+plt.plot(validPheno,lasso_model.predict(validMat),'xr',label='Validation')
 plt.axline((0, 0), slope=1)
 plt.xlabel('Data')
 plt.ylabel('LASSO model prediction')
@@ -117,7 +323,7 @@ plt.show()
 For `alpha=0.1` the fit isn't very good and we know the true coefficient values should be 1. Using `alpha=0.01` gives much better results: 
 ```{python}
 lasso_model = linear_model.Lasso(alpha=0.01)
-lasso_model.fit(trainMat.T,trainPheno.T)
+lasso_model.fit(trainMat,trainPheno)
 ```
 
 Plot the LASSO coefficients: 
@@ -130,8 +336,8 @@ plt.show()
 
 Plot the model predictions vs true values of training data:  
 ```{python}
-plt.plot(trainPheno.T,lasso_model.predict(trainMat.T),'+b',label='Training')
-plt.plot(validPheno.T,lasso_model.predict(validMat.T),'xr',label='Validation')
+plt.plot(trainPheno,lasso_model.predict(trainMat),'+b',label='Training')
+plt.plot(validPheno,lasso_model.predict(validMat),'xr',label='Validation')
 plt.axline((0, 0), slope=1)
 plt.xlabel('Data')
 plt.ylabel('LASSO model prediction')
@@ -143,7 +349,7 @@ plt.show()
 ### Can we do better using cross-validation to select `alpha`?
 ```{python}
 lassoCV_model = linear_model.LassoCV(cv=5,random_state=0)
-lassoCV_model.fit(trainMat.T,trainPheno.T)
+lassoCV_model.fit(trainMat,trainPheno)
 ```
 
 ```{python}
@@ -155,8 +361,8 @@ plt.show()
 
 Plot the model predictions vs true values of training data:  
 ```{python}
-plt.plot(trainPheno.T,lassoCV_model.predict(trainMat.T),'+b',label='Training')
-plt.plot(validPheno.T,lassoCV_model.predict(validMat.T),'xr',label='Validation')
+plt.plot(trainPheno,lassoCV_model.predict(trainMat),'+b',label='Training')
+plt.plot(validPheno,lassoCV_model.predict(validMat),'xr',label='Validation')
 plt.axline((0, 0), slope=1)
 plt.xlabel('Data')
 plt.ylabel('LassoCV model prediction')
@@ -168,13 +374,13 @@ plt.show()
 ## Now try with more markers
 
 ```{python}
-trainMat, trainPheno, validMat, validPheno, markerImage = generate_synthetic_data(rng_seed=1,n_markers=1000)
+trainMat, trainPheno, validMat, validPheno, markerImage = data_loader.generate_synthetic_data(rng_seed=1,n_markers=1000)
 ```
 
 Using cross-validation to select `alpha`.
 ```{python}
 lassoCV_model = linear_model.LassoCV(cv=5,random_state=0)
-lassoCV_model.fit(trainMat.T,trainPheno.T)
+lassoCV_model.fit(trainMat,trainPheno)
 ```
 
 Plot the model coefficients: 
@@ -188,8 +394,8 @@ plt.show()
 
 Plot the model predictions vs true values of training data:  
 ```{python}
-plt.plot(trainPheno.T,lassoCV_model.predict(trainMat.T),'+b',label='Training')
-plt.plot(validPheno.T,lassoCV_model.predict(validMat.T),'xr',label='Validation')
+plt.plot(trainPheno,lassoCV_model.predict(trainMat),'+b',label='Training')
+plt.plot(validPheno,lassoCV_model.predict(validMat),'xr',label='Validation')
 plt.axline((0, 0), slope=1)
 plt.xlabel('Data')
 plt.ylabel('LassoCV model prediction')
@@ -219,7 +425,7 @@ plt.show()
 ```
 
 ```{python}
-lassoCV_model_wheat = linear_model.LassoCV(cv=5,random_state=0)
+lassoCV_model_wheat = linear_model.LassoCV(cv=5,random_state=0,max_iter=10000)
 lassoCV_model_wheat.fit(converted['wheat_example']['Markers'],converted['wheat_example']['y'])
 ```
 
@@ -247,7 +453,7 @@ plt.show()
 ### Try with fixed alpha
 
 ```{python}
-lasso_model_wheat = linear_model.Lasso(alpha=0.025)
+lasso_model_wheat = linear_model.Lasso(alpha=0.01)
 lasso_model_wheat.fit(converted['wheat_example']['Markers'],converted['wheat_example']['y'])
 ```
 
@@ -265,9 +471,9 @@ Plot the model predictions vs true values of training data:
 plt.plot(converted['wheat_example']['y'],lasso_model_wheat.predict(converted['wheat_example']['Markers']),'+b',label='Training')
 # plt.plot(validPheno.T,lassoCV_model.predict(validMat.T),'xr',label='Validation')
 plt.axline((0, 0), slope=1)
-plt.xlabel('Data')
-plt.ylabel('LassoCV model prediction')
-plt.title(r'LASSO CV fit, fixed alpha=0.1')
+plt.xlabel('Wheat Data')
+plt.ylabel('Lasso model prediction')
+plt.title(r'Wheat Data: LASSO fit, fixed alpha=0.01')
 plt.legend()
 plt.show()
 ```
@@ -276,7 +482,9 @@ plt.show()
 
 
 ```{python}
-trainMat, trainPheno, validMat, validPheno, markerImage = load_wheat_data()
+trainMat, trainPheno, validMat, validPheno, testMat, testPheno, markerImage = data_loader.load_wheat_data()
+
+trainMat, trainPheno, validMat, validPheno, testMat, testPheno, markerImage = data_loader.load_wheat_data(randomise=False)
 ```
 
 ## Train the DeepGS model
@@ -289,15 +497,15 @@ else:
     print ("MPS device not found.")
 
 model = train_deepGSModel(
-    trainMat=trainMat.T,
-    trainPheno=trainPheno.T,
-    validMat=validMat.T,
-    validPheno=validPheno.T,
+    trainMat=trainMat,
+    trainPheno=trainPheno,
+    validMat=validMat,
+    validPheno=validPheno,
     markerImage=markerImage,
     cnnFrame=cnnFrame,
     device=device,
     eval_metric="mae",
-    num_round=6000,
+    num_round=600,
     batch_size=32,
     learning_rate=0.001,
     patience=10000
@@ -307,21 +515,126 @@ print("Training complete.")
 print(model)
 ```
 
-The above codes writes the best model to file. We will load it and make some plots. 
+The above code writes the best model to file. We will load it and make some plots. (NOT LOADED YET, JUST USING THE MODEL OUTPUT ABOVE - SHOULD BE THE SAME)
 
 ```{python}
 H, W = markerImage
 model.eval()
 # Train predictions
 train_true, train_pred = evaluate_model(
-    model, trainMat.T.reshape(-1, 1, H, W), trainPheno.T, markerImage, device=device)
+    model, trainMat, trainPheno, markerImage, device=device)
 
 save_path="saved_models"
 datetime_str = datetime.now().strftime("_%Y%m%d_%H%M%S")
 
+# use without save_path so no file is created
 plot_actual_vs_predicted(
         train_true, train_pred,
-        title="Train: Actual vs Predicted",
-        save_path=f"{save_path}/train_actual_vs_predicted{datetime_str}.png"
+        title="Train: Actual vs Predicted"
     )
+model.train()
 ```
+
+```{python}
+H, W = markerImage
+model.eval()
+# Train predictions
+valid_true, valid_pred = evaluate_model(
+    model, validMat, validPheno, markerImage, device=device)
+
+save_path="saved_models"
+datetime_str = datetime.now().strftime("_%Y%m%d_%H%M%S")
+
+# use without save_path so no file is created
+plot_actual_vs_predicted(
+        valid_true, valid_pred,
+        title="Validation: Actual vs Predicted"
+    )
+model.train()
+```
+
+```{python}
+H, W = markerImage
+model.eval()
+# Train predictions
+test_true, test_pred = evaluate_model(
+    model, testMat, testPheno, markerImage, device=device)
+
+save_path="saved_models"
+datetime_str = datetime.now().strftime("_%Y%m%d_%H%M%S")
+
+# use without save_path so no file is created
+plot_actual_vs_predicted(
+        test_true, test_pred,
+        title="Testing: Actual vs Predicted"
+    )
+model.train()
+```
+
+```{python}
+plt.plot(train_true,train_pred,'o',c='g')
+plt.plot(valid_true,valid_pred,'^',c='b')
+plt.plot(test_true,test_pred,'+',c='r')
+phenoMin = min(trainPheno.min(),validPheno.min(),testPheno.min())
+phenoMax = max(trainPheno.max(),validPheno.max(),testPheno.max())
+plt.plot([phenoMin, phenoMax],
+            [phenoMin, phenoMax],
+            'r--', lw=2)
+plt.xlabel("Actual phenotype")
+plt.ylabel("Predicted phenotype")
+plt.title("Predicted vs Actual")
+plt.grid(True)
+plt.show()
+
+```
+
+Visualise the model and update process. See this [How to Visualize PyTorch Neural Networks - 3 Examples in Python](https://www.appsilon.com/post/visualize-pytorch-neural-networks)
+
+```{python}
+from torchviz import make_dot
+y = model(torch.tensor(trainMat.reshape(-1, 1, H, W), dtype=torch.float).to(device))
+make_dot(y.mean(), params=dict(model.named_parameters()))
+```
+
+Show the shape and weights in model layers: 
+```{python}
+for parameter in model.parameters():
+    print(parameter.data.shape)
+    print(parameter.data)
+```
+
+We see we have `conv_num_filter` channels, each with kernel size `conv_kernel`, then the Max Pool layer, then a hidden layer with `fullayer_num_hidden` neurons feeding into a final layer with one neuron. For the parameters used and the wheat data, the hidden layer has `32x1208` weights; where does the `1208` come from? The data has `1225` markers. 
+
+For the synthetic data with `50` markers, this shape becomes `32x32`. 
+
+For synthetic data with `100` markers, this shape becomes `32x80`. 
+
+For synthetic data with `200` markers, this shape becomes `32x180`. 
+
+For synthetic data with `264` markers, this shape becomes `32x244`. 
+
+For synthetic data with `512` markers, this shape becomes `32x492`. 
+
+For synthetic data with `1024` markers, this shape becomes `1004`. 
+
+For synthetic data with `1224` markers, this shape becomes `1204`. 
+
+For synthetic data with `1225-1227` markers, this shape becomes `1208`. 
+
+The input to the model is size `(n_samples,n_channels,1,n_markers)` where `n_channels=1` and the genome is `1 x n_markers`. This gets convolved `conv_num_filter` times (here `4`) and then max-pooled with `pool_kernel = 1*4` so reduced roughly four-fold, except with 1224 markers this goes to 301, then that with the 4 channels gets flattened to 1204. 
+
+> x: torch.Size([32, 1, 1, 1224])
+x-conv:  torch.Size([32, 4, 1, 301])
+x-flat:  torch.Size([32, 1204])
+
+
+Here's what [Conv2D](https://docs.pytorch.org/docs/stable/generated/torch.nn.Conv2d.html) does. 
+
+Input is e.g. `(n_samples,1,1,n_markers)`. 
+
+Output of Conv2D is `(n_samples,4,1,n_markers-17-1+1)=(n_samples,4,1,n_markers-17) (dilation=default=1, stride=1, padding=default=0)`
+
+Input of [MaxPool2D](https://docs.pytorch.org/docs/stable/generated/torch.nn.MaxPool2d.html)
+is e.g. `(n_samples,1,1,n_markers-17)`. 
+
+Output is `(n_samples,1,1,floor(((n_markers-17)-3-1)/4+1))=(n_samples,1,1,floor((n_markers-21)/4+1))`. When `n_markers=1225` this gives 302 and hence 1208 when 4 channels are flattened, as reported above. 

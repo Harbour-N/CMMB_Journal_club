@@ -31,16 +31,15 @@ def plot_both_vs_marker(marker, y_true, y_pred, title="Pheno vs Marker", save_pa
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
     plt.close()
 
+# mat should be a genome matrix shape (n_samples x n_markers)
 def evaluate_model(model, mat, pheno, markerImage, device="cpu"):
-    """mat should be original orientation: (markers x samples)"""
     H, W = markerImage
 
     print(mat.shape)
 
     # Match training reshape
-    X = mat.T.reshape(-1, 1, H, W)
+    X = mat.reshape(-1, 1, H, W)
     X = torch.tensor(X, dtype=torch.float32).to(device)
-    X = torch.tensor(mat, dtype=torch.float32).to(device)
     y_true = pheno
 
     print(X.shape)
