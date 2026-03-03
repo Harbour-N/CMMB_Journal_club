@@ -12,27 +12,26 @@ def load_data(save_path="saved_models"):
     return trainMat, trainPheno, validMat, validPheno, markerImage
 
 # load wheat and split into train-validation set and test set
-def load_wheat_data(save_path="saved_models",rngSeed=0,randomise=True):
+def load_wheat_data(cvIdx=0,n_cvs=10,valid_fraction=0.1,save_path="saved_models",rngSeed=0,randomise=True):
     converted = rdata.read_rda("../data/wheat_example.rda")
     Markers = converted['wheat_example']['Markers'].values
     y = converted['wheat_example']['y'].values
 
     if (randomise): 
-        cvSampleList = cvSampleIndex(len(y),10)
-        cvIdx = 0
+        cvSampleList = cvSampleIndex(len(y),n_cvs,rngSeed=rngSeed)
         trainIdx = cvSampleList[cvIdx]['trainIdx']
         testIdx = cvSampleList[cvIdx]['testIdx']
         rng = np.random.default_rng(rngSeed)
-        index = rng.choice(len(trainIdx),int(len(trainIdx)*0.1),replace=False)
+        index = rng.choice(len(trainIdx),int(len(trainIdx)*valid_fraction),replace=False)
     else: 
-        trainIdx = np.arange(int(len(y)*0.9))
-        testIdx = np.arange(int(len(y)*0.9),int(len(y)))
-        index = np.arange(int(len(trainIdx)*0.1))
+        trainIdx = np.arange(int(len(y)*(1-valid_fraction)))
+        testIdx = np.arange(int(len(y)*(1-valid_fraction)),int(len(y)))
+        index = np.arange(int(len(trainIdx)*valid_fraction))
 
     trainMat = Markers[trainIdx,]
     trainPheno = y[trainIdx]
     mask = np.ones_like(trainIdx, dtype=bool)
-    mask[index] = False # set the chosen 10% of indices to False
+    mask[index] = False # set the chosen valid_fraction of indices to False
 
     validMat = trainMat[~mask]
     validPheno = trainPheno[~mask]
@@ -43,7 +42,7 @@ def load_wheat_data(save_path="saved_models",rngSeed=0,randomise=True):
 
     n_markers = Markers.shape[1]
     markerImage = (1, n_markers)  # update based on your data!
-    return trainMat, trainPheno, validMat, validPheno, testMat, testPheno, markerImage
+    return trainMat, trainPheno, validMat, validPheno, testMat, testPheno, trainIdx[mask], trainIdx[~mask], testIdx, markerImage
 
 
 ########################generate train idx and test idx ##########################

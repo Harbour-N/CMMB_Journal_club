@@ -30,6 +30,8 @@ This Quarto document relates to [A deep convolutional neural network approach fo
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.utils.data import TensorDataset, DataLoader
+
 import os
 import numpy as np
 from datetime import datetime
@@ -41,7 +43,7 @@ import rdata
 from deepgs_model import DeepGSModel
 from diagnostics import plot_actual_vs_predicted, evaluate_model, plot_both_vs_marker
 import data_loader
-from train_deepgs import train_deepGSModel
+from train_deepgs import train_deepGSModel,train_deepGSModel2,train_model
 from config import cnnFrame
 
 import run_training
@@ -165,8 +167,7 @@ legend("topleft",c("Train","Validation","Test"),col=c("green","blue","red"),pch 
 dev.off()
 
 To see the structure of something: 
-srt(cvSampleList)
-
+str(cvSampleList)
 ```
 
 These prediction sets and plots aren't quite correct. `trainIdx` still includes validation points as `trainMat` is defined using `trainMat[-validIdx,]` and `trainIdx` doesn't have elements removed. Also in the above `trainIdx` and `testIdx` are indices into `Markers` but `validIdx` is indices into `trainMat`!
@@ -220,8 +221,19 @@ cnnFrame <- list(conv_kernel = conv_kernel, conv_num_filter = conv_num_filter, c
 markerImage = paste0("1*",ncol(trainMat))
 
 trainGSmodel <- train_deepGSModel(trainMat = trainMat, trainPheno = trainPheno, validMat = validMat, validPheno = validPheno, markerImage = markerImage, cnnFrame = cnnFrame, device_type = "cpu", gpuNum = 1, eval_metric = "mae", num_round = 6000, array_batch_size =  30, learning_rate = 0.01, momentum = 0.5, wd = 0.00001, randomseeds = 0, initializer_idx = 0.01, verbose = TRUE)
-
 ```
+
+# Data
+
+The [DeepGS](https://github.com/cma2015/DeepGS/) repo contains an R dataset `wheat_example.rda` with 599 wheat strains, 1225 markers and one phenotype (grain length).
+
+This is similar to the dataset at [CIMMYT](https://genomics.cimmyt.org/#Software), which has 599 strains, 1229 markers and grain length phenotype for four different environments (the first must be the same as the values are identical: `wheat_example$y-Y` yields a `599x4` array with a first column of zeros). The marker matrix is identical in the first 1225 positions.
+
+The full dataset is suppposed to be at [standarizedData_univariate.RData](https://genomics.cimmyt.org/mexican_iranian/traverse/iranian/standarizedData_univariate.RData) but that is not found on the server.
+
+[Crossa et al, 2016](https://academic.oup.com/g3journal/article/6/7/1819/6027742) refers to the data and Table 1 shows that the grain length data is from the Iranian collection with 2000 strains and 33709 markers.
+
+[Replication Data for: Genomic Prediction of Gene Bank Wheat Landraces](https://hdl.handle.net/11529/10548918) seems to have what we need.
 
 # Python implementation
 
@@ -239,6 +251,8 @@ cnnFrame = {
     "conv_stride": ["1*1"],         # stride height=1, width=1
     "conv_num_filter": [8],         # 8 convolution filters
 
+    "norm_layer": None, 
+
     "pool_act_type": ["relu"],      # ReLU after convolution
     "pool_type": ["max"],           # max pooling
     "pool_kernel": ["1*4"],         # pool over width=4
@@ -250,9 +264,11 @@ cnnFrame = {
 
     # Dropout: must be 1 more entry than number of FC layers
     # e.g. for FC = [32,1], you need drop_float = [drop_before_FC1, drop_before_FC2, drop_before_output]
-    "drop_float": [0.2, 0.1, 0.05]  # example values (tunable)
+    # Paper uses 0.2, 0.1, 0.05
+    "drop_float": [0.2, 0.1, 0.05]  # example values (tunable) 
     # "drop_float": [0.4, 0.2, 0.1]  # example values (tunable)
     # "drop_float": [0.1, 0.05, 0.025]  # example values (tunable)
+    # "drop_float": [0.5, 0.5, 0.2]  # example values (tunable)
 }
 
 ```
@@ -293,15 +309,46 @@ else:
     print ("MPS device not found.")
 ```
 
+```{python}
+model = DeepGSModel(cnnFrame, markerImage).to(device)
+"""Prepare 2D NCHW tensors + DataLoaders (MPS/CPU/CUDA-safe)."""
+H, W = markerImage
+train4d = trainMat.reshape(-1, 1, H, W)
+valid4d = validMat.reshape(-1, 1, H, W)
 
-## Try using LASSO regression to fit a linear model
+Xtr = torch.from_numpy(train4d).float()  # keep on CPU
+Xva = torch.from_numpy(valid4d).float()
+ytr = torch.from_numpy(trainPheno).float().view(-1, 1)
+yva = torch.from_numpy(validPheno).float().view(-1, 1)
+batch_size=64
+
+is_cuda = device.type == "cuda"
+train_loader = DataLoader(TensorDataset(Xtr, ytr),
+                            batch_size=batch_size,
+                            shuffle=True,
+                            num_workers=(2 if is_cuda else 0),
+                            pin_memory=is_cuda,
+                            persistent_workers=is_cuda and 2 > 0)
+valid_loader = DataLoader(TensorDataset(Xva, yva),
+                            batch_size=batch_size,
+                            shuffle=False,
+                            num_workers=(2 if is_cuda else 0),
+                            pin_memory=is_cuda,
+                            persistent_workers=is_cuda and 2 > 0)
+
+model, best_loss = train_model(model, train_loader, valid_loader, device, patience=200)
+
+```
+
+# Try using LASSO regression to fit a linear model
 
 ```{python}
 lasso_model = linear_model.Lasso(alpha=0.1)
 lasso_model.fit(trainMat,trainPheno)
 ```
 
-Plot the LASSO coefficients: 
+Plot the LASSO coefficients:
+
 ```{python}
 plt.plot(lasso_model.coef_)
 plt.xlabel('Markers')
@@ -309,7 +356,8 @@ plt.ylabel('LASSO coefficients')
 plt.show()
 ```
 
-Plot the model predictions vs true values of training data:  
+Plot the model predictions vs true values of training data:
+
 ```{python}
 plt.plot(trainPheno,lasso_model.predict(trainMat),'+b',label='Training')
 plt.plot(validPheno,lasso_model.predict(validMat),'xr',label='Validation')
@@ -320,13 +368,15 @@ plt.legend()
 plt.show()
 ```
 
-For `alpha=0.1` the fit isn't very good and we know the true coefficient values should be 1. Using `alpha=0.01` gives much better results: 
+For `alpha=0.1` the fit isn't very good and we know the true coefficient values should be 1. Using `alpha=0.01` gives much better results:
+
 ```{python}
 lasso_model = linear_model.Lasso(alpha=0.01)
 lasso_model.fit(trainMat,trainPheno)
 ```
 
 Plot the LASSO coefficients: 
+
 ```{python}
 plt.plot(lasso_model.coef_)
 plt.xlabel('Markers')
@@ -334,7 +384,8 @@ plt.ylabel('LASSO coefficients')
 plt.show()
 ```
 
-Plot the model predictions vs true values of training data:  
+Plot the model predictions vs true values of training data:
+
 ```{python}
 plt.plot(trainPheno,lasso_model.predict(trainMat),'+b',label='Training')
 plt.plot(validPheno,lasso_model.predict(validMat),'xr',label='Validation')
@@ -347,6 +398,7 @@ plt.show()
 ```
 
 ### Can we do better using cross-validation to select `alpha`?
+
 ```{python}
 lassoCV_model = linear_model.LassoCV(cv=5,random_state=0)
 lassoCV_model.fit(trainMat,trainPheno)
@@ -359,7 +411,8 @@ plt.ylabel('LASSO coefficients')
 plt.show()
 ```
 
-Plot the model predictions vs true values of training data:  
+Plot the model predictions vs true values of training data:
+
 ```{python}
 plt.plot(trainPheno,lassoCV_model.predict(trainMat),'+b',label='Training')
 plt.plot(validPheno,lassoCV_model.predict(validMat),'xr',label='Validation')
@@ -378,12 +431,13 @@ trainMat, trainPheno, validMat, validPheno, markerImage = data_loader.generate_s
 ```
 
 Using cross-validation to select `alpha`.
+
 ```{python}
 lassoCV_model = linear_model.LassoCV(cv=5,random_state=0)
 lassoCV_model.fit(trainMat,trainPheno)
 ```
 
-Plot the model coefficients: 
+Plot the model coefficients:
 
 ```{python}
 plt.plot(lassoCV_model.coef_)
@@ -392,7 +446,8 @@ plt.ylabel('LASSO coefficients')
 plt.show()
 ```
 
-Plot the model predictions vs true values of training data:  
+Plot the model predictions vs true values of training data:
+
 ```{python}
 plt.plot(trainPheno,lassoCV_model.predict(trainMat),'+b',label='Training')
 plt.plot(validPheno,lassoCV_model.predict(validMat),'xr',label='Validation')
@@ -410,7 +465,14 @@ plt.show()
 converted = rdata.read_rda("../data/wheat_example.rda")
 ```
 
-Plot all the phenotype data, sorted to give a sense of the distribution: 
+Check the statistics of this data. We expect it has been normalised already such that mean=0 and sample standard deviation is 1: 
+
+```{python}
+print('mean(grain length data) = %g' % np.mean(converted['wheat_example']['y']))
+print('std(grain length data) = %g' % np.std(converted['wheat_example']['y'],ddof=1))
+```
+
+Plot all the phenotype data, sorted to give a sense of the distribution:
 
 ```{python}
 plt.plot(np.sort(converted['wheat_example']['y']),'*')
@@ -438,7 +500,8 @@ plt.ylabel('LASSO coefficients')
 plt.show()
 ```
 
-Plot the model predictions vs true values of training data:  
+Plot the model predictions vs true values of training data:
+
 ```{python}
 plt.plot(converted['wheat_example']['y'],lassoCV_model_wheat.predict(converted['wheat_example']['Markers']),'+b',label='Training')
 # plt.plot(validPheno.T,lassoCV_model.predict(validMat.T),'xr',label='Validation')
@@ -466,7 +529,8 @@ plt.ylabel('LASSO coefficients')
 plt.show()
 ```
 
-Plot the model predictions vs true values of training data:  
+Plot the model predictions vs true values of training data:
+
 ```{python}
 plt.plot(converted['wheat_example']['y'],lasso_model_wheat.predict(converted['wheat_example']['Markers']),'+b',label='Training')
 # plt.plot(validPheno.T,lassoCV_model.predict(validMat.T),'xr',label='Validation')
@@ -480,14 +544,167 @@ plt.show()
 
 # CNN with wheat data
 
+```{python}
+seed = 0
+cvIdx = 0
+
+# This call to load_wheat_data uses default rngSeed=0 so is reproducible
+trainMat, trainPheno, validMat, validPheno, testMat, testPheno, trainIdx, validIdx, testIdx, markerImage = data_loader.load_wheat_data(cvIdx=cvIdx)
+```
 
 ```{python}
-trainMat, trainPheno, validMat, validPheno, testMat, testPheno, markerImage = data_loader.load_wheat_data()
+trainMat, trainPheno, validMat, validPheno, testMat, testPheno, trainIdx, validIdx, testIdx, markerImage = data_loader.load_wheat_data(randomise=False)
+```
 
-trainMat, trainPheno, validMat, validPheno, testMat, testPheno, markerImage = data_loader.load_wheat_data(randomise=False)
+No need to normalise the data as we've already checked it has mean zero and standard deviation one. 
+
+```{python}
+marker_mean = trainMat.mean(axis=0)
+marker_std  = trainMat.std(axis=0)
+marker_std[marker_std < 1e-8] = 1e-8      # avoid division by zero
+trainMat_norm = (trainMat - marker_mean) / marker_std
+validMat_norm = (validMat - marker_mean) / marker_std  # apply train stats only
+testMat_norm = (testMat - marker_mean) / marker_std  # apply train stats only
 ```
 
 ## Train the DeepGS model
+
+Somewhere to store all the test predictions
+
+```{python}
+test_pred_all = np.zeros_like(converted['wheat_example']['y'])
+```
+
+```{python}
+device = "cuda" if torch.cuda.is_available() else "cpu"
+if torch.backends.mps.is_available():
+    device = torch.device("mps")
+else:
+    print ("MPS device not found.")
+
+seed = 2
+torch.manual_seed(seed)
+
+model = train_deepGSModel(
+    trainMat=trainMat,
+    trainPheno=trainPheno,
+    validMat=validMat,
+    validPheno=validPheno,
+    markerImage=markerImage,
+    cnnFrame=cnnFrame,
+    device=device,
+    eval_metric="mae",
+    num_round=6000,
+    batch_size=32,
+    learning_rate=0.001,
+    momentum=0.1,
+    patience=10000
+)
+
+print("Training complete.")
+print(model)
+```
+
+The above code writes the best model to file. We will load it and make some plots. (NOT LOADED YET, JUST USING THE MODEL OUTPUT ABOVE - SHOULD BE THE SAME)
+
+```{python}
+model.eval()
+# Train predictions
+train_true, train_pred = evaluate_model(
+    model, trainMat, trainPheno, markerImage, device=device)
+# Train predictions
+valid_true, valid_pred = evaluate_model(
+    model, validMat, validPheno, markerImage, device=device)
+# Train predictions
+test_true, test_pred = evaluate_model(
+    model, testMat, testPheno, markerImage, device=device)
+model.train()
+```
+
+Store test predictions in `test_pred_all`:
+
+```{python}
+test_pred_all[testIdx] = test_pred
+```
+
+```{python}
+# use without save_path so no file is created
+plot_actual_vs_predicted(
+        train_true, train_pred,
+        title="Train: Actual vs Predicted"
+    )
+```
+
+```{python}
+# use without save_path so no file is created
+plot_actual_vs_predicted(
+        valid_true, valid_pred,
+        title="Validation: Actual vs Predicted"
+    )
+```
+
+```{python}
+# use without save_path so no file is created
+plot_actual_vs_predicted(
+        test_true, test_pred,
+        title="Testing: Actual vs Predicted"
+    )
+```
+
+```{python}
+plt.plot(train_true,train_pred,'o',c='g',label='Train')
+plt.plot(valid_true,valid_pred,'^',c='b',label='Validation')
+plt.plot(test_true,test_pred,'+',c='r',label='Test')
+phenoMin = min(trainPheno.min(),validPheno.min(),testPheno.min())
+phenoMax = max(trainPheno.max(),validPheno.max(),testPheno.max())
+plt.plot([phenoMin, phenoMax],
+            [phenoMin, phenoMax],
+            'r--', lw=2)
+plt.xlabel("Actual phenotype")
+plt.ylabel("Predicted phenotype")
+plt.title("Predicted vs Actual, cvIdx=%d" % cvIdx)
+plt.grid(True)
+plt.legend()
+plt.show()
+```
+
+Check that `test_pred_all` has assigned the prediction in the correct places, by plotting on the same plot - where they are not zero they should coincide with the test set for this round: 
+
+```{python}
+plt.plot(train_true,train_pred,'o',c='g',label='Train')
+plt.plot(valid_true,valid_pred,'^',c='b',label='Validation')
+plt.plot(converted['wheat_example']['y'],test_pred_all,'*')
+plt.plot(test_true,test_pred,'+',c='r',label='Test')
+phenoMin = min(trainPheno.min(),validPheno.min(),testPheno.min())
+phenoMax = max(trainPheno.max(),validPheno.max(),testPheno.max())
+plt.plot([phenoMin, phenoMax],
+            [phenoMin, phenoMax],
+            'r--', lw=2)
+plt.xlabel("Actual phenotype")
+plt.ylabel("Predicted phenotype")
+plt.title("Predicted vs Actual, cvIdx=0")
+plt.grid(True)
+plt.legend()
+plt.show()
+```
+
+## Repeat with a different CV set
+
+```{python}
+cvIdx = 1
+trainMat, trainPheno, validMat, validPheno, testMat, testPheno, trainIdx, validIdx, testIdx, markerImage = data_loader.load_wheat_data(cvIdx=cvIdx)
+```
+
+```{python}
+marker_mean = trainMat.mean(axis=0)
+marker_std  = trainMat.std(axis=0)
+marker_std[marker_std < 1e-8] = 1e-8      # avoid division by zero
+trainMat_norm = (trainMat - marker_mean) / marker_std
+validMat_norm = (validMat - marker_mean) / marker_std  # apply train stats only
+testMat_norm = (testMat - marker_mean) / marker_std  # apply train stats only
+```
+
+### Train the DeepGS model
 
 ```{python}
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -506,8 +723,9 @@ model = train_deepGSModel(
     device=device,
     eval_metric="mae",
     num_round=600,
-    batch_size=32,
+    batch_size=64,
     learning_rate=0.001,
+    momentum=0.1,
     patience=10000
 )
 
@@ -515,66 +733,24 @@ print("Training complete.")
 print(model)
 ```
 
-The above code writes the best model to file. We will load it and make some plots. (NOT LOADED YET, JUST USING THE MODEL OUTPUT ABOVE - SHOULD BE THE SAME)
-
 ```{python}
-H, W = markerImage
 model.eval()
 # Train predictions
 train_true, train_pred = evaluate_model(
     model, trainMat, trainPheno, markerImage, device=device)
-
-save_path="saved_models"
-datetime_str = datetime.now().strftime("_%Y%m%d_%H%M%S")
-
-# use without save_path so no file is created
-plot_actual_vs_predicted(
-        train_true, train_pred,
-        title="Train: Actual vs Predicted"
-    )
-model.train()
-```
-
-```{python}
-H, W = markerImage
-model.eval()
 # Train predictions
 valid_true, valid_pred = evaluate_model(
     model, validMat, validPheno, markerImage, device=device)
-
-save_path="saved_models"
-datetime_str = datetime.now().strftime("_%Y%m%d_%H%M%S")
-
-# use without save_path so no file is created
-plot_actual_vs_predicted(
-        valid_true, valid_pred,
-        title="Validation: Actual vs Predicted"
-    )
-model.train()
-```
-
-```{python}
-H, W = markerImage
-model.eval()
 # Train predictions
 test_true, test_pred = evaluate_model(
     model, testMat, testPheno, markerImage, device=device)
-
-save_path="saved_models"
-datetime_str = datetime.now().strftime("_%Y%m%d_%H%M%S")
-
-# use without save_path so no file is created
-plot_actual_vs_predicted(
-        test_true, test_pred,
-        title="Testing: Actual vs Predicted"
-    )
 model.train()
 ```
 
 ```{python}
-plt.plot(train_true,train_pred,'o',c='g')
-plt.plot(valid_true,valid_pred,'^',c='b')
-plt.plot(test_true,test_pred,'+',c='r')
+plt.plot(train_true,train_pred,'o',c='g',label='Train')
+plt.plot(valid_true,valid_pred,'^',c='b',label='Validation')
+plt.plot(test_true,test_pred,'+',c='r',label='Test')
 phenoMin = min(trainPheno.min(),validPheno.min(),testPheno.min())
 phenoMax = max(trainPheno.max(),validPheno.max(),testPheno.max())
 plt.plot([phenoMin, phenoMax],
@@ -582,59 +758,277 @@ plt.plot([phenoMin, phenoMax],
             'r--', lw=2)
 plt.xlabel("Actual phenotype")
 plt.ylabel("Predicted phenotype")
-plt.title("Predicted vs Actual")
+plt.title("Predicted vs Actual, cvIdx=%d" % cvIdx)
 plt.grid(True)
 plt.show()
-
 ```
+
+## Visualise the model
 
 Visualise the model and update process. See this [How to Visualize PyTorch Neural Networks - 3 Examples in Python](https://www.appsilon.com/post/visualize-pytorch-neural-networks)
 
+Also a summary of tools here [Tools to Design or Visualize Architecture of Neural Network](https://github.com/ashishpatel26/Tools-to-Design-or-Visualize-Architecture-of-Neural-Network).
+
 ```{python}
 from torchviz import make_dot
+H, W = markerImage
 y = model(torch.tensor(trainMat.reshape(-1, 1, H, W), dtype=torch.float).to(device))
 make_dot(y.mean(), params=dict(model.named_parameters()))
 ```
 
-Show the shape and weights in model layers: 
+### Torchview
+
+Also try R `conda install -c conda-forge torchview`
+
+```{python}
+from torchview import draw_graph
+# device='meta' -> no memory is consumed for visualization 
+model_graph = draw_graph(model, input_size=(599,1,H,W), device='meta')
+model_graph.visual_graph
+```
+
+### Inspect layer sizes from input to output
+
+Show the shape and weights in model layers:
+
 ```{python}
 for parameter in model.parameters():
     print(parameter.data.shape)
-    print(parameter.data)
+    # print(parameter.data)
 ```
 
-We see we have `conv_num_filter` channels, each with kernel size `conv_kernel`, then the Max Pool layer, then a hidden layer with `fullayer_num_hidden` neurons feeding into a final layer with one neuron. For the parameters used and the wheat data, the hidden layer has `32x1208` weights; where does the `1208` come from? The data has `1225` markers. 
+We see we have the following layers and associated parameters (sizes in brackets for the structural parameters used and the wheat data):
 
-For the synthetic data with `50` markers, this shape becomes `32x32`. 
+-   **2D convolution:** `conv_num_filter` channels, each with kernel size `conv_kernel` and `conv_num_filter` bias terms (8 convolution kernels, `(8,1,1,18)`, and `(8)` bias values); input is (599,1,1,1225) output is (599,8,1,1208);
+-   ReLU layer, no parameters or size change;
+-   Max Pool layer, only structural parameters `kernel_size` and `stride`, etc; 'kernel_size=4\` means final dimension reduced by factor of 4 to (599,8,1,302);
+-   Flatten, turns `(samples,conv_num_filter,H,W)` to `(samples,conv_num_filter x H x W)`; (599,8,1,302) to (599,2416)
+-   [Dropout](https://docs.pytorch.org/docs/stable/generated/torch.nn.Dropout.html), during training, randomly zeroes some of the elements of the input tensor with probability `p=drop_float[0]`.
+-   [Linear](https://docs.pytorch.org/docs/stable/generated/torch.nn.Linear.html) hidden layer with `fullayer_num_hidden` neurons (`32x2416` weights and `32` bias values); input (599,2416) becomes output size (599,32);
+-   ReLU;
+-   [Dropout](https://docs.pytorch.org/docs/stable/generated/torch.nn.Dropout.html), `p=drop_float[1]`
+-   feeding into a final [Linear](https://docs.pytorch.org/docs/stable/generated/torch.nn.Linear.html) layer with one neuron; since this maps from 32 to 1 neuron the weights are (`1x32` weights and `1` bias value); input (599,32) output (599,1);
+-   [Dropout](https://docs.pytorch.org/docs/stable/generated/torch.nn.Dropout.html), `p=drop_float[2]`, to output.
 
-For synthetic data with `100` markers, this shape becomes `32x80`. 
+Where does the `1208` come from? The data has `1225` markers.
 
-For synthetic data with `200` markers, this shape becomes `32x180`. 
+For the synthetic data with `50` markers, this shape becomes `32x32`.
 
-For synthetic data with `264` markers, this shape becomes `32x244`. 
+For synthetic data with `100` markers, this shape becomes `32x80`.
 
-For synthetic data with `512` markers, this shape becomes `32x492`. 
+For synthetic data with `200` markers, this shape becomes `32x180`.
 
-For synthetic data with `1024` markers, this shape becomes `1004`. 
+For synthetic data with `264` markers, this shape becomes `32x244`.
 
-For synthetic data with `1224` markers, this shape becomes `1204`. 
+For synthetic data with `512` markers, this shape becomes `32x492`.
 
-For synthetic data with `1225-1227` markers, this shape becomes `1208`. 
+For synthetic data with `1024` markers, this shape becomes `1004`.
 
-The input to the model is size `(n_samples,n_channels,1,n_markers)` where `n_channels=1` and the genome is `1 x n_markers`. This gets convolved `conv_num_filter` times (here `4`) and then max-pooled with `pool_kernel = 1*4` so reduced roughly four-fold, except with 1224 markers this goes to 301, then that with the 4 channels gets flattened to 1204. 
+For synthetic data with `1224` markers, this shape becomes `1204`.
 
-> x: torch.Size([32, 1, 1, 1224])
-x-conv:  torch.Size([32, 4, 1, 301])
-x-flat:  torch.Size([32, 1204])
+For synthetic data with `1225-1227` markers, this shape becomes `1208`.
 
+The input to the model is size `(n_samples,n_channels,1,n_markers)` where `n_channels=1` and the genome is `1 x n_markers`. This gets convolved `conv_num_filter` times (here `4`) and then max-pooled with `pool_kernel = 1*4` so reduced roughly four-fold, except with 1224 markers this goes to 301, then that with the 4 channels gets flattened to 1204.
 
-Here's what [Conv2D](https://docs.pytorch.org/docs/stable/generated/torch.nn.Conv2d.html) does. 
+> x: torch.Size(\[32, 1, 1, 1224\]) x-conv: torch.Size(\[32, 4, 1, 301\]) x-flat: torch.Size(\[32, 1204\])
 
-Input is e.g. `(n_samples,1,1,n_markers)`. 
+Here's what [Conv2D](https://docs.pytorch.org/docs/stable/generated/torch.nn.Conv2d.html) does.
+
+Input is e.g. `(n_samples,1,1,n_markers)`.
 
 Output of Conv2D is `(n_samples,4,1,n_markers-17-1+1)=(n_samples,4,1,n_markers-17) (dilation=default=1, stride=1, padding=default=0)`
 
-Input of [MaxPool2D](https://docs.pytorch.org/docs/stable/generated/torch.nn.MaxPool2d.html)
-is e.g. `(n_samples,1,1,n_markers-17)`. 
+Input of [MaxPool2D](https://docs.pytorch.org/docs/stable/generated/torch.nn.MaxPool2d.html) is e.g. `(n_samples,1,1,n_markers-17)`.
 
-Output is `(n_samples,1,1,floor(((n_markers-17)-3-1)/4+1))=(n_samples,1,1,floor((n_markers-21)/4+1))`. When `n_markers=1225` this gives 302 and hence 1208 when 4 channels are flattened, as reported above. 
+Output is `(n_samples,1,1,floor(((n_markers-17)-3-1)/4+1))=(n_samples,1,1,floor((n_markers-21)/4+1))`. When `n_markers=1225` this gives 302 and hence 1208 when 4 channels are flattened, as reported above.
+
+# Repeat learning with a generic train_model function
+
+This would allow the same training function to use different models. 
+
+```{python}
+trainMat, trainPheno, validMat, validPheno, testMat, testPheno, trainIdx, validIdx, testIdx, markerImage = data_loader.load_wheat_data(cvIdx=0)
+```
+
+```{python}
+marker_mean = trainMat.mean(axis=0)
+marker_std  = trainMat.std(axis=0)
+marker_std[marker_std < 1e-8] = 1e-8      # avoid division by zero
+trainMat_norm = (trainMat - marker_mean) / marker_std
+validMat_norm = (validMat - marker_mean) / marker_std  # apply train stats only
+testMat_norm = (testMat - marker_mean) / marker_std  # apply train stats only
+```
+
+```{python}
+seed = 0
+torch.manual_seed(seed)
+
+model = DeepGSModel(cnnFrame, markerImage).to(device)
+"""Prepare 2D NCHW tensors + DataLoaders (MPS/CPU/CUDA-safe)."""
+H, W = markerImage
+train4d = trainMat.reshape(-1, 1, H, W)
+valid4d = validMat.reshape(-1, 1, H, W)
+
+Xtr = torch.from_numpy(train4d).float()  # keep on CPU
+Xva = torch.from_numpy(valid4d).float()
+ytr = torch.from_numpy(trainPheno).float().view(-1, 1)
+yva = torch.from_numpy(validPheno).float().view(-1, 1)
+batch_size=64
+
+is_cuda = device.type == "cuda"
+train_loader = DataLoader(TensorDataset(Xtr, ytr),
+                            batch_size=batch_size,
+                            shuffle=True,
+                            num_workers=(2 if is_cuda else 0),
+                            pin_memory=is_cuda,
+                            persistent_workers=is_cuda and 2 > 0)
+valid_loader = DataLoader(TensorDataset(Xva, yva),
+                            batch_size=batch_size,
+                            shuffle=False,
+                            num_workers=(2 if is_cuda else 0),
+                            pin_memory=is_cuda,
+                            persistent_workers=is_cuda and 2 > 0)
+
+model, best_loss = train_model(model, train_loader, valid_loader, device, num_epochs=6000, patience=2000)
+```
+
+```{python}
+model.eval()
+# Train predictions
+train_true, train_pred = evaluate_model(
+    model, trainMat, trainPheno, markerImage, device=device)
+# Train predictions
+valid_true, valid_pred = evaluate_model(
+    model, validMat, validPheno, markerImage, device=device)
+# Train predictions
+test_true, test_pred = evaluate_model(
+    model, testMat, testPheno, markerImage, device=device)
+model.train()
+```
+
+```{python}
+plt.plot(train_true,train_pred,'o',c='g',label='Train')
+plt.plot(valid_true,valid_pred,'^',c='b',label='Validation')
+plt.plot(test_true,test_pred,'+',c='r',label='Test')
+phenoMin = min(trainPheno.min(),validPheno.min(),testPheno.min())
+phenoMax = max(trainPheno.max(),validPheno.max(),testPheno.max())
+plt.plot([phenoMin, phenoMax],
+            [phenoMin, phenoMax],
+            'r--', lw=2)
+plt.xlabel("Actual phenotype")
+plt.ylabel("Predicted phenotype")
+plt.title("Predicted vs Actual, cvIdx=0")
+plt.grid(True)
+plt.legend()
+plt.show()
+```
+
+# Combining model predictions from cross-validation
+
+The paper states:
+
+> In a tenfold cross-validation experiment, individuals in the whole GS dataset were first randomly partitioned into ten groups with approximately equal size. The GS model was trained and validated using genotypic and phenotypic data of individuals from nine groups (90% individuals for the training set; 10% individuals for the validation set). The trained GS model was subsequently applied to predict phenotypic trait values of individuals from the remaining group (testing set) using only genotypic data. This process was repeated ten times until each group was used once for testing; **the predicted phenotypic trait values were finally combined for performance evaluation** using the mean normalized discounted cumulative gain value (MNV) (Blondel et al. 2015).
+
+Presumably here combined means using the mean of the 10 predictions for each strain? Rather than [combining the CNN models](https://medium.com/@fellyralte/merging-multiple-pytorch-models-using-weight-averaging-a-practical-solution-to-3a66916abb1c) and then making one prediction?
+
+But each testing set (10% of data) is only predicted once, so *combine* presumably means build predictions for all the data by concatenating all the predictions together? To do this, we need to know which indices into the real data we are predicting.  
+
+On the other hand, 10 models are in fact generated here, so every phenotype is predicted 10 times, once as part of the test set, and 9 times as part of train or validation set. Let's accumulate that as well. 
+
+## Try looping over cvIdx
+
+```{python}
+converted = rdata.read_rda("../data/wheat_example.rda")
+test_pred_all = np.zeros_like(converted['wheat_example']['y'])
+pred_all = np.zeros_like(converted['wheat_example']['y'])
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+if torch.backends.mps.is_available():
+    device = torch.device("mps")
+else:
+    print ("MPS device not found.")
+
+for cvIdx in np.arange(10): 
+    seed = 0
+
+    # This call to load_wheat_data uses default rngSeed=0 so is reproducible
+    trainMat, trainPheno, validMat, validPheno, testMat, testPheno, trainIdx, validIdx, testIdx, markerImage = data_loader.load_wheat_data(cvIdx=cvIdx)
+
+    seed = 1
+    torch.manual_seed(seed)
+
+    model = train_deepGSModel(
+        trainMat=trainMat,
+        trainPheno=trainPheno,
+        validMat=validMat,
+        validPheno=validPheno,
+        markerImage=markerImage,
+        cnnFrame=cnnFrame,
+        device=device,
+        eval_metric="mae",
+        num_round=6000,
+        batch_size=32,
+        learning_rate=0.001,
+        momentum=0.1,
+        patience=10000,
+        verbose=False
+    )
+
+    print("cvIdx=%d. Training complete." % cvIdx)
+
+    model.eval()
+    # Train predictions
+    train_true, train_pred = evaluate_model(
+        model, trainMat, trainPheno, markerImage, device=device)
+    # Train predictions
+    valid_true, valid_pred = evaluate_model(
+        model, validMat, validPheno, markerImage, device=device)
+    # Train predictions
+    test_true, test_pred = evaluate_model(
+        model, testMat, testPheno, markerImage, device=device)
+    model.train()
+
+    test_pred_all[testIdx] = test_pred
+    pred_all[trainIdx] += train_pred
+    pred_all[validIdx] += valid_pred
+    pred_all[testIdx] += test_pred
+
+pred_all /= 10
+```
+### Plot the last round of training together with all test predictions
+
+```{python}
+plt.plot(train_true,train_pred,'o',c='g',label='Train')
+plt.plot(valid_true,valid_pred,'^',c='b',label='Validation')
+plt.plot(converted['wheat_example']['y'],test_pred_all,'*')
+plt.plot(test_true,test_pred,'+',c='r',label='Test')
+phenoMin = min(trainPheno.min(),validPheno.min(),testPheno.min())
+phenoMax = max(trainPheno.max(),validPheno.max(),testPheno.max())
+plt.plot([phenoMin, phenoMax],
+            [phenoMin, phenoMax],
+            'r--', lw=2)
+plt.xlabel("Actual phenotype")
+plt.ylabel("Predicted phenotype")
+plt.title("Predicted vs Actual, cvIdx=%d" % cvIdx)
+plt.grid(True)
+plt.legend()
+plt.show()
+```
+
+### Plot all test predictions and mean of all predictions
+
+```{python}
+plt.plot(converted['wheat_example']['y'],test_pred_all,'*',label='Combined test sets')
+plt.plot(converted['wheat_example']['y'],pred_all,'.',label='Mean of all predictions')
+phenoMin = min(trainPheno.min(),validPheno.min(),testPheno.min())
+phenoMax = max(trainPheno.max(),validPheno.max(),testPheno.max())
+plt.plot([phenoMin, phenoMax],
+            [phenoMin, phenoMax],
+            'r--', lw=2)
+plt.xlabel("Actual phenotype")
+plt.ylabel("Predicted phenotype")
+plt.title("Predicted vs Actual, after 10-fold CV")
+plt.grid(True)
+plt.legend()
+plt.show()
+```

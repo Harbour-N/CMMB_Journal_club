@@ -15,7 +15,9 @@ cnnFrame = {
 cnnFrame = {
     "conv_kernel": ["1*18"],        # kernel height=1, width=18
     "conv_stride": ["1*1"],         # stride height=1, width=1
-    "conv_num_filter": [4],         # 8 convolution filters
+    "conv_num_filter": [8],         # 8 convolution filters
+
+    "norm_layer": None, 
 
     "pool_act_type": ["relu"],      # ReLU after convolution
     "pool_type": ["max"],           # max pooling
@@ -28,9 +30,10 @@ cnnFrame = {
 
     # Dropout: must be 1 more entry than number of FC layers
     # e.g. for FC = [32,1], you need drop_float = [drop_before_FC1, drop_before_FC2, drop_before_output]
-    # "drop_float": [0.2, 0.1, 0.05]  # example values (tunable)
+    # Paper uses 0.2, 0.1, 0.05
+    "drop_float": [0.2, 0.1, 0.05]  # example values (tunable)
     # "drop_float": [0.4, 0.2, 0.1]  # example values (tunable)
-    "drop_float": [0.1, 0.05, 0.025]  # example values (tunable)
+    # "drop_float": [0.1, 0.05, 0.025]  # example values (tunable)
 }
 
 # Marker image reshape (must match your genotype vector length)

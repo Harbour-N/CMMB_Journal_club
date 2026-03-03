@@ -15,7 +15,7 @@ def plot_actual_vs_predicted(y_true, y_pred, title="Actual vs Predicted", save_p
 
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
-    plt.show
+    plt.show()
     # plt.close()
 
 def plot_both_vs_marker(marker, y_true, y_pred, title="Pheno vs Marker", save_path=None):
@@ -35,14 +35,10 @@ def plot_both_vs_marker(marker, y_true, y_pred, title="Pheno vs Marker", save_pa
 def evaluate_model(model, mat, pheno, markerImage, device="cpu"):
     H, W = markerImage
 
-    print(mat.shape)
-
     # Match training reshape
     X = mat.reshape(-1, 1, H, W)
     X = torch.tensor(X, dtype=torch.float32).to(device)
     y_true = pheno
-
-    print(X.shape)
 
     model.eval()
     with torch.no_grad():

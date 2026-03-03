@@ -23,12 +23,20 @@ class DeepGSModel(nn.Module):
         conv_layers = []
         in_channels = 1
         for i in range(len(conv_filters)):
+            out_ch = conv_filters[i]
             conv_layers.append(nn.Conv2d(
                 in_channels=in_channels,
                 out_channels=conv_filters[i],
                 kernel_size=tuple(conv_kernels[i]),
                 stride=tuple(conv_strides[i])
             ))
+
+            if cnnFrame['norm_layer'] == ['GroupNorm']: 
+                # *** ADD GROUPNORM HERE ***            
+                # # 8 groups is a good default; must divide out_ch            
+                num_groups = min(8, out_ch)  # fallback if out_ch < 8            
+                conv_layers.append(nn.GroupNorm(num_groups=num_groups, num_channels=out_ch))
+
 
             # Activation
             if act_types[i] == "relu":
@@ -50,7 +58,7 @@ class DeepGSModel(nn.Module):
                     stride=tuple(pool_strides[i])
                 ))
 
-            in_channels = conv_filters[i]
+            in_channels = out_ch
 
         self.conv_stack = nn.Sequential(*conv_layers)
 
@@ -93,3 +101,100 @@ class DeepGSModel(nn.Module):
         x = torch.flatten(x, 1)
         # print('x-flat: ',x.shape)
         return self.fc_stack(x)
+
+
+import torch.nn.functional as F
+
+class LightGSModel(nn.Module):
+    """
+    A low-capacity, stable, low-overfitting CNN architecture for genomic prediction.
+    Designed specifically for genotype matrices (1×H×W) on CPU/MPS/GPU.
+    """
+
+    def __init__(self, markerImage):
+        super().__init__()
+
+        H, W = markerImage
+
+        # ---- Convolutional block ----
+        # Only one convolution layer with small number of filters
+        self.conv = nn.Conv2d(
+            in_channels=1,
+            out_channels=16,
+            kernel_size=(1, 5),
+            stride=(1, 1),
+            padding=(0,2),
+            bias=True
+        )
+
+        # GroupNorm is stable and MPS-friendly
+        self.norm = nn.GroupNorm(num_groups=4, num_channels=16)
+
+        # Dropout in convolution helps more than usual for genomic data
+        self.dropout_conv = nn.Dropout2d(p=0.2)
+
+        # Max pooling to reduce spatial size and capacity
+        self.pool = nn.MaxPool2d(kernel_size=(1,2), stride=(1,2))
+
+        # ---- Determine flatten size ----
+        with torch.no_grad():
+            dummy = torch.zeros(1, 1, H, W)
+            x = self.pool(self.dropout_conv(F.relu(self.norm(self.conv(dummy)))))
+            flattened = x.numel()
+
+        self.fc1 = nn.Linear(flattened, 32)
+        self.dropout_fc = nn.Dropout(p=0.5)
+        self.fc_out = nn.Linear(32, 1)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.norm(x)
+        x = F.relu(x)
+        x = self.dropout_conv(x)
+        x = self.pool(x)           # (N,16,H, W/2)
+
+        x = torch.flatten(x, 1)
+        x = self.fc1(x)
+        x = F.relu(x)
+        x = self.dropout_fc(x)
+        return self.fc_out(x)
+
+
+class LightGS1D(nn.Module):
+    """
+    Low-capacity 1D CNN for genotype -> phenotype regression.
+    Very stable on MPS; reduced overfitting vs DeepGS.
+    """
+    def __init__(self, num_markers):
+        super().__init__()
+        C = 32
+
+        # Conv1d over marker dimension
+        self.conv = nn.Conv1d(in_channels=1, out_channels=C,
+                              kernel_size=9, stride=1, padding=4, bias=True)
+        # GroupNorm over channels works for 1D as well
+        self.norm = nn.GroupNorm(num_groups=8, num_channels=C)
+        self.drop_conv = nn.Dropout(p=0.2)
+        self.pool = nn.MaxPool1d(kernel_size=2, stride=2)  # halve length
+
+        # Determine flatten size
+        with torch.no_grad():
+            dummy = torch.zeros(1, 1, num_markers)
+            x = self.pool(self.drop_conv(F.relu(self.norm(self.conv(dummy)))))
+            flattened = x.numel()
+
+        self.fc1 = nn.Linear(flattened, 32)
+        self.drop_fc = nn.Dropout(p=0.5)
+        self.fc_out = nn.Linear(32, 1)
+
+    def forward(self, x):            # x: (N, 1, M)
+        x = self.conv(x)             # (N, C, M)
+        x = self.norm(x)
+        x = F.relu(x)
+        x = self.drop_conv(x)
+        x = self.pool(x)             # (N, C, M/2)
+        x = torch.flatten(x, 1)
+        x = self.fc1(x)
+        x = F.relu(x)
+        x = self.drop_fc(x)
+        return self.fc_out(x)
