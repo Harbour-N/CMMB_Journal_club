@@ -1,0 +1,307 @@
+---
+title: Proliferation-Invasion-Recruitment model
+authors:
+  - name: Markus Owen
+format: 
+  html:
+    embed-resources: true
+    code-fold: true
+    number-sections: true
+    toc: true
+    toc-depth: 3
+    date: now
+    date-modified: last-modified
+    date-format: "MMMM DD, YYYY, HH:mm:ss"
+  pdf: 
+    number-sections: true
+    colorlinks: true
+execute:
+  echo: true
+jupyter: python3
+---
+
+[Simulating PDGF-Driven Glioma Growth and Invasion in an Anatomically Accurate Brain Domain](https://doi.org/10.1007/s11538-017-0312-3)
+
+```{python}
+import numpy as np
+import matplotlib.pyplot as plt
+
+#import an ODE solver
+from scipy.integrate import solve_ivp
+from scipy.optimize import fsolve
+
+```
+
+
+The model to simulate is 
+
+$$
+\begin{align}
+\frac{\partial c}{\partial t} &= \frac{\partial}{\partial x} \left( D_c(c,r,p) \frac{\partial c}{\partial x}\right) + \bar{\rho}_c(c,r,p) c \\
+\frac{\partial r}{\partial t} &= \frac{\partial}{\partial x} \left( D_r(c,r,p) \frac{\partial r}{\partial x}\right) + \bar{\rho}_r(c,r,p) r \\
+\frac{\partial p}{\partial t} &= \frac{\partial}{\partial x} \left( D_p \frac{\partial p}{\partial x}\right) + \eta_c c - q_r \beta(p) - q_c \beta(p) \alpha c
+\end{align}
+$$
+
+where 
+
+$$
+\begin{align}
+D_c(c,r,p) &= D_c \gamma(c,r,p,p_{auto}) \\[1ex]
+D_r(c,r,p) &= D_r \gamma(c,r,p,0) \\[1ex]
+\bar{\rho}_c(c,r,p) &= \rho_c \gamma(c,r,p,p_{auto}) \\[1ex]
+\bar{\rho}_r(c,r,p) &= \rho_r \gamma(c,r,p,0) \\[1ex]
+\gamma(c,r,p,p_auto) &= \frac{\beta(p+p_{auto})}{\beta({EC}_{50})+\beta(p+p_{auto})} \left(1-\frac{c+r}{k}\right) \\[1ex]
+\beta(p) &= \frac{p}{k_m+p} \\[1ex]
+\alpha &= 1 - \beta(p_{auto})
+\end{align}
+$$
+
+## Discretisation of cell movement terms
+
+Considering mesh points $x_i=i \Delta x$, $i=0,1,\dots,N$ with $\Delta x = L/N$, and virtual mesh points half-way between each of these: 
+$$
+\begin{align}
+\left.\frac{\partial}{\partial x} \left( D_c(c,r,p) \frac{\partial c}{\partial x}\right)\right|_{x_i} 
+&\approx \frac{\left. D_c(c,r,p) \frac{\partial c}{\partial x} \right|_{x_{i+1/2}} - \left. D_c(c,r,p) \frac{\partial c}{\partial x} \right|_{x_{i-1/2}}}{\Delta x}\\[1ex]
+&\approx \frac{\left. D_c(c,r,p)\right|_{x_{i+1/2}} \frac{c(x_{i+1})-c(x_i)}{\Delta x}  - \left. D_c(c,r,p) \right|_{x_{i-1/2}} \frac{c(x_{i})-c(x_{i-1})}{\Delta x} }{\Delta x}\\[1ex]
+&\approx \frac{\left(\left. D_c(c,r,p)\right|_{x_{i}} + \left. D_c(c,r,p)\right|_{x_{i+1}} \right) (c_{i+1}-c_i)  - \left(\left. D_c(c,r,p)\right|_{x_{i-1}} + \left. D_c(c,r,p)\right|_{x_{i}} \right) (c_{i}-c_{i-1}) }{2{\Delta x}^2}\\[1ex]
+\end{align}
+$$
+
+Notice that when $D_c$ is constant we recover the standard second order finite difference scheme for the second derivative. 
+
+## Set up the model and parameters
+
+Set up parameters: 
+
+```{python}
+D_c = 0.1
+D_r = 0.1
+D_p = 1
+
+rho_c = 1
+rho_r = 1
+k = 1
+p_auto = 0
+EC50 = 1
+k_m = 1
+
+eta_c = 1
+q_r = 1
+q_c = 1
+
+O2a = 1
+x0 = 1
+infected_fraction = 0.99
+
+N = 101
+L = 10
+
+tmax = 10
+nplots = 11
+```
+
+Parameters from the paper: 
+
+```{python}
+D_c = 5.8e-5
+D_r = 5.8e-5
+D_p = 5e-4
+
+rho_c = np.log(2)/(18/24)
+rho_r = np.log(2)/(18/24)
+k = 2.3e8
+p_auto = 1
+EC50 = 10**0.5
+k_m = 30
+
+eta_c = 1e-5
+q_c = 10**-5.15
+q_r = 10**-5.15
+
+O2a = 250/((4/3)*np.pi*0.03**3) # 2210485.3 ~ 2.2e6 in 2018 paper
+x0 = 0.03
+infected_fraction = 0.99
+
+N = 101
+L = 0.35
+
+tmax = 30
+nplots = 11
+```
+
+### Define the mesh and helper functions
+
+```{python}
+dx = L/(N-1)
+dx2 = dx**2
+
+xx = np.linspace(0,L,N)
+```
+
+```{python}
+def D_rho_fun(c,r,p,p_auto=0):
+    return (beta(p+p_auto)/(beta(EC50)+beta(p+p_auto)))*(1-(c+r)/k)
+
+def beta(p):
+    return p/(k_m+p)
+```
+
+Define zero flux indices.
+
+```{python}
+im1 = np.arange(0,N, dtype=np.uint64)-1
+im1[0] = 1
+ip1 = np.arange(0,N, dtype=np.uint64)+1
+ip1[-1] = N-2
+```
+```{python}
+# define the right-hand side of the ODEs
+def pir1d(t, z):
+    c = z[0:N]
+    r = z[N:2*N]
+    p = z[2*N:]
+
+    # c_spatial = D_c*D_rho_fun(c,r,p,p_auto)*(c[im1]-2*c+c[ip1])/dx2
+    # r_spatial = D_r*D_rho_fun(c,r,p)*(r[im1]-2*r+r[ip1])/dx2
+    # p_spatial = D_p*(p[im1]-2*p+p[ip1])/dx2
+
+    # store the functional part of the diffusion term at mid points of the grid
+    # 0-th entry is at dx/2, 1-th is at 3dx/2, 2nd to last L-dx/2, last is also at L-dx/2
+    # this makes sense because then approximating a derivative across x=L should give 
+    # zero as we are implementing zero-flux boundary conditions 
+    D_rho_c_half = (D_rho_fun(c,r,p,p_auto) + D_rho_fun(c[ip1],r[ip1],p[ip1],p_auto))/2
+    D_rho_r_half = (D_rho_fun(c,r,p) + D_rho_fun(c[ip1],r[ip1],p[ip1]))/2
+    c_spatial = D_c*(D_rho_c_half*(c[ip1]-c)-D_rho_c_half[im1]*(c-c[im1]))/dx2
+    r_spatial = D_r*(D_rho_r_half*(r[ip1]-r)-D_rho_r_half[im1]*(r-r[im1]))/dx2
+    p_spatial = D_p*(p[im1]-2*p+p[ip1])/dx2
+
+
+    return np.concatenate((c_spatial + rho_c*D_rho_fun(c,r,p,p_auto)*c,r_spatial + rho_r*D_rho_fun(c,r,p)*r,p_spatial + eta_c*c - q_c*c*p - q_r*r*p))
+```
+
+
+```{python}
+tspan = [0, tmax] 
+t_eval = np.linspace(0, tmax, nplots)
+rng = np.random.default_rng(1)
+
+c0 = infected_fraction*O2a*(xx<x0)
+r0 = (1-infected_fraction)*O2a*(xx<x0) + O2a*(xx>=x0)
+p0 = np.zeros(N)
+
+z0 = np.concatenate((c0,r0,p0))
+
+# solve the problem using solve_ivp, storing the solution in sol
+# https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.solve_ivp.html
+sol = solve_ivp(pir1d, tspan, z0, t_eval=t_eval)
+```
+
+Plot the solution in space at selected time points
+
+```{python}
+
+# plot the solution
+fig, ax = plt.subplots(3,1,sharex=True)
+ax[0].plot(xx,sol.y[0:N,])
+ax[0].set_title(r'PIR simulation: $\eta_c =$ %g, $p_{auto} =$ %g' % (eta_c, p_auto))
+ax[0].set_ylabel('c, infected cells')
+
+ax[1].plot(xx,sol.y[N:2*N,])
+ax[1].set_ylabel('r, recruited cells')
+
+ax[2].plot(xx,sol.y[2*N:,])
+ax[2].set_ylabel('p, PDGF')
+ax[2].set_xlabel('x')
+plt.show()
+```
+
+## Repeat with larger $\eta_c$, PDGF production
+
+```{python}
+eta_c = 1e-4
+
+tspan = [0, tmax] 
+t_eval = np.linspace(0, tmax, nplots)
+rng = np.random.default_rng(1)
+
+c0 = infected_fraction*O2a*(xx<x0)
+r0 = (1-infected_fraction)*O2a*(xx<x0) + O2a*(xx>=x0)
+p0 = np.zeros(N)
+
+z0 = np.concatenate((c0,r0,p0))
+
+# solve the problem using solve_ivp, storing the solution in sol
+# https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.solve_ivp.html
+sol = solve_ivp(pir1d, tspan, z0, t_eval=t_eval)
+```
+
+```{python}
+
+# plot the solution
+fig, ax = plt.subplots(3,1,sharex=True)
+ax[0].plot(xx,sol.y[0:N,])
+ax[0].set_title(r'PIR simulation: $\eta_c =$ %g, $p_{auto} =$ %g' % (eta_c, p_auto))
+ax[0].set_ylabel('c, infected cells')
+
+ax[1].plot(xx,sol.y[N:2*N,])
+ax[1].set_ylabel('r, recruited cells')
+
+ax[2].plot(xx,sol.y[2*N:,])
+ax[2].set_ylabel('p, PDGF')
+ax[2].set_xlabel('x')
+plt.show()
+```
+
+## Set $p_{auto}=0$, autocrine behaviour should be included anyway
+
+```{python}
+eta_c = 1e-4
+p_auto = 0
+
+tspan = [0, tmax] 
+t_eval = np.linspace(0, tmax, nplots)
+rng = np.random.default_rng(1)
+
+c0 = infected_fraction*O2a*(xx<x0)
+r0 = (1-infected_fraction)*O2a*(xx<x0) + O2a*(xx>=x0)
+p0 = np.zeros(N)
+
+z0 = np.concatenate((c0,r0,p0))
+
+# solve the problem using solve_ivp, storing the solution in sol
+# https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.solve_ivp.html
+sol = solve_ivp(pir1d, tspan, z0, t_eval=t_eval)
+```
+
+```{python}
+
+# plot the solution
+fig, ax = plt.subplots(3,1,sharex=True)
+ax[0].plot(xx,sol.y[0:N,])
+ax[0].set_title(r'PIR simulation: $\eta_c =$ %g, $p_{auto} =$ %g' % (eta_c, p_auto))
+ax[0].set_ylabel('c, infected cells')
+
+ax[1].plot(xx,sol.y[N:2*N,])
+ax[1].set_ylabel('r, recruited cells')
+
+ax[2].plot(xx,sol.y[2*N:,])
+ax[2].set_ylabel('p, PDGF')
+ax[2].set_xlabel('x')
+plt.show()
+```
+
+# Numerical method for the 2D code
+
+From [scmassey/2D_Proliferation-Invasion-Recruitment](https://github.com/scmassey/2D%5fProliferation-Invasion-Recruitment)
+
+`2D_mouse_brain.mat` isn't in the repo, and this site `http://brainatlas.mbi.ufl.edu` doesn't exist any more. This repo seems relevant: [mouse-brain-atlas](https://github.com/dama-lab/mouse-brain-atlas).
+
+The method outlined above is similar to that used in [pir_numerics_2d.m](https://github.com/scmassey/2D_Proliferation-Invasion-Recruitment/blob/f61c8ea498fb8617b87c62a29071cd81b0014182/pir_numerics_2d.m#L137) where these interface weights are used in [diffusion_op.m](https://github.com/scmassey/2D_Proliferation-Invasion-Recruitment/blob/master/diffusion_op.m). 
+
+Above we use that approximation for the diffusion operator at time $t$. In the paper code the approximation is used at times $t$ and $t+\Delta t$, except the $c,r,p$ used in calculating diffusive weights use the old time and the problem remains linear at each time step. 
+
+Not sure if it is really Crank-Nicolson as I'm confused about a factor of two. 
+
+Notice [Phyllis Nicolson](https://en.wikipedia.org/wiki/Phyllis_Nicolson). 
