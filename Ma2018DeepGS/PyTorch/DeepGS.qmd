@@ -1,0 +1,336 @@
+---
+title: DeepGS combining R and Python
+authors:
+  - name: Markus Owen
+format: 
+  html:
+    embed-resources: true
+    code-fold: true
+    number-sections: true
+    toc: true
+    toc-depth: 3
+    date: now
+    date-modified: last-modified
+    date-format: "MMMM DD, YYYY, HH:mm:ss"
+  pdf: 
+    number-sections: true
+    colorlinks: true
+execute:
+  echo: true
+engine: knitr
+# jupyter: python3
+#engine: jupyter
+#jupyter: ir
+---
+
+# Introduction
+
+This Quarto document relates to [A deep convolutional neural network approach for predicting phenotypes from genotypes](https://doi.org/10.1007/s00425-018-2976-9). 
+
+To get R and Python to work together I installed 
+
+`install.packages("reticulate")` to allow Python to work from R, and 
+`install.packages("IRkernel")` and `IRkernel::installspec()` to allow R to work from Jupyter. 
+
+# R
+
+```{r}
+library(reticulate)
+use_condaenv("gsc_tc_model", required = TRUE)
+```
+
+Which specific R is being executed? 
+
+```{r}
+file.path(R.home("bin"), "R")
+```
+
+## [rrBLUP mixed.solve example](https://cran.r-project.org/web/packages/rrBLUP/refman/rrBLUP.html#mixed.solve)
+
+Create a random population of 200 lines with 1000 markers and random marker effects; use rrBLUP's `mixed.solve` to fit the mixed model of marker effects (using `Z=M`) and breeding values (using `K=A.mat(M)`). 
+
+```{r}
+library(rrBLUP)
+
+m <- 1000
+n <- 200
+#random population of 200 lines with 1000 markers
+M <- matrix(rep(0,n*m),n,m)
+for (i in 1:n) {
+  M[i,] <- ifelse(runif(m)<0.5,-1,1)
+}
+rownames(M) <- 1:n
+A <- A.mat(M)
+
+#random phenotypes
+u <- rnorm(m)
+g <- as.vector(crossprod(t(M),u))
+h2 <- 0.5  #heritability
+y <- g + rnorm(n,mean=0,sd=sqrt((1-h2)/h2*var(g)))
+
+data <- data.frame(y=y,gid=1:n)
+
+#predict marker effects
+ans1 <- mixed.solve(y,Z=M)  #By default K = I
+accuracy <- cor(u,ans1$u)
+
+#predict breeding values
+ans2 <- mixed.solve(y,K=A.mat(M))
+accuracy <- cor(g,ans2$u)
+```
+
+
+Use `kin.blip` to predict breeding values, which should give identical values.  
+
+```{r}
+#predict breeding values using kin.blup, gives identical results to mixed.solve with K=A.mat(M)
+ans3 <- kin.blup(data=data,geno="gid",pheno="y",K=A)
+accuracy <- cor(g,ans3$g)
+```
+
+
+```{r}
+# plot predictions based on marker effects
+pred1 <- crossprod(t(M),ans1$u) + as.vector(ans1$beta)
+plot(y,pred1)
+abline(0,1,col='red')
+```
+
+```{r}
+# plot predictions based on breeding value
+pred2 <- ans2$u + as.vector(ans2$beta)
+plot(y,pred2)
+abline(0,1,col='red')
+```
+
+These two are identical, because the method to estimate the $u$ uses the kinship matrix anyway? 
+
+```{r}
+plot(pred1,pred2)
+abline(0,1,col='red')
+```
+
+
+# python
+
+Check that we can also fit the PyTorch CNN model. 
+
+```{python}
+# package imports
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import TensorDataset, DataLoader
+
+import os
+import numpy as np
+from datetime import datetime
+import matplotlib.pyplot as plt
+from sklearn import linear_model
+import rdata
+
+# local imports
+from deepgs_model import DeepGSModel
+from diagnostics import plot_actual_vs_predicted, evaluate_model, plot_both_vs_marker
+import data_loader
+from train_deepgs import train_deepGSModel,train_deepGSModel2,train_model
+from config import cnnFrame
+
+import run_training
+```
+
+```{python}
+converted = rdata.read_rda("../data/wheat_example.rda")
+```
+
+```{python}
+seed = 0
+cvIdx = 0
+
+# This call to load_wheat_data uses default rngSeed=0 so is reproducible
+trainMat, trainPheno, validMat, validPheno, testMat, testPheno, trainIdx, validIdx, testIdx, markerImage = data_loader.load_wheat_data(cvIdx=cvIdx)
+```
+
+```{python}
+device = "cuda" if torch.cuda.is_available() else "cpu"
+if torch.backends.mps.is_available():
+    device = torch.device("mps")
+else:
+    print ("MPS device not found.")
+
+seed = 2
+torch.manual_seed(seed)
+
+model = train_deepGSModel(
+    trainMat=trainMat,
+    trainPheno=trainPheno,
+    validMat=validMat,
+    validPheno=validPheno,
+    markerImage=markerImage,
+    cnnFrame=cnnFrame,
+    device=device,
+    eval_metric="mae",
+    num_round=10,
+    batch_size=32,
+    learning_rate=0.001,
+    momentum=0.1,
+    patience=10000
+)
+
+print("Training complete.")
+print(model)
+```
+
+
+Make predictions with the fitted model: 
+
+```{python}
+model.eval()
+# Train predictions
+train_true, train_pred = evaluate_model(
+    model, trainMat, trainPheno, markerImage, device=device)
+# Train predictions
+valid_true, valid_pred = evaluate_model(
+    model, validMat, validPheno, markerImage, device=device)
+# Train predictions
+test_true, test_pred = evaluate_model(
+    model, testMat, testPheno, markerImage, device=device)
+model.train()
+```
+
+```{python}
+plt.plot(train_true,train_pred,'o',c='g',label='Train')
+plt.plot(valid_true,valid_pred,'^',c='b',label='Validation')
+plt.plot(test_true,test_pred,'+',c='r',label='Test')
+phenoMin = min(trainPheno.min(),validPheno.min(),testPheno.min())
+phenoMax = max(trainPheno.max(),validPheno.max(),testPheno.max())
+plt.plot([phenoMin, phenoMax],
+            [phenoMin, phenoMax],
+            'r--', lw=2)
+plt.xlabel("Actual phenotype")
+plt.ylabel("Predicted phenotype")
+plt.title("Predicted vs Actual, cvIdx=%d" % cvIdx)
+plt.grid(True)
+plt.legend()
+plt.show()
+```
+
+# Back to R - using rrBLUP with the wheat data
+
+Extract the wheat data from Python variables using `py$`, and used rrBLUP's `mixed.solve` to fit marker effects. 
+
+```{r}
+py$converted
+
+M = py$converted$wheat_example$M$values
+
+y = py$converted$wheat_example$y$values
+
+#predict marker effects
+ans4 <- mixed.solve(y,Z=M)  #By default K = I
+
+pred4 <- crossprod(t(M),ans4$u) + as.vector(ans4$beta)
+```
+
+## Plot the predictions based on marker effects vs the true values. 
+
+```{r}
+cor4 <- cor(y,pred4)
+plot(y,pred4,main=paste("Wheat grain length, rrBLUP, Pearson correlation=", cor4))
+abline(0,1,col='red')
+```
+
+## Plot the predictions based on breeding values vs the true values. 
+
+```{r}
+# predict breeding values (should be similar to phenotypes)
+ans5 <- mixed.solve(y,K=A.mat(M))
+cor5 <- cor(y,ans5$u)
+plot(y,ans5$u,main=paste("Wheat grain length, rrBLUP with A.mat, Pearson correlation=", cor5))
+abline(0,1,col='red')
+
+```
+
+# Using BGLR
+
+```{r}
+library('BGLR')
+```
+
+From "[Various Ways of fitting a 'GBLUP' model using BGLR](https://github.com/gdlc/BGLR-R/blob/master/inst/md/GBLUP.md#various-ways-of-fitting-a-gblup-model-using-bglr)"
+
+## Fit the model 
+
+```{r}
+ data(wheat)
+
+ nIter=12000
+ burnIn=2000
+
+ X=scale(wheat.X)/sqrt(ncol(wheat.X))
+ y=wheat.Y[,1]
+
+ fm1=BGLR( y=y,ETA=list(mrk=list(X=X,model='BRR')),
+	   nIter=nIter,burnIn=burnIn,saveAt='brr_'
+ 	 )
+
+ varE=scan('brr_varE.dat')
+ varU=scan('brr_ETA_mrk_varB.dat')
+ h2_1=varU/(varU+varE)
+```
+
+Check it works using plain matrix / numeric data. 
+
+```{r}
+ X=as.matrix(scale(wheat.X)/sqrt(ncol(wheat.X)))
+ y=as.numeric(wheat.Y[,1])
+
+ fm1=BGLR( y=y,ETA=list(mrk=list(X=X,model='BRR')),
+	   nIter=nIter,burnIn=burnIn,saveAt='brr_'
+ 	 )
+
+ varE=scan('brr_varE.dat')
+ varU=scan('brr_ETA_mrk_varB.dat')
+ h2_1=varU/(varU+varE)
+```
+
+Plot BGLR prediction vs true values. 
+
+```{r}
+pred6 <- predict(fm1)
+cor6 <- cor(y,pred6)
+plot(y,pred6,main=paste("Wheat grain length, BGLR, Pearson correlation=", cor6))
+abline(0,1,col='red')
+```
+
+Predict marker effects and breeding values using rrBLUP instead
+
+```{r}
+#predict marker effect
+ans7 <- mixed.solve(y,Z=wheat.X)
+# predictions based on marker effects
+pred7 <- crossprod(t(wheat.X),ans7$u) + as.vector(ans7$beta)
+cor7 <- cor(y,pred7)
+
+
+#predict breeding values
+ans8 <- mixed.solve(y,K=A.mat(wheat.X))
+# predictions based on breeding value
+pred8 <- ans8$u + as.vector(ans8$beta)
+cor8 <- cor(y,pred8)
+plot(y,pred8,main=paste("Wheat grain length, rrBLUP, Pearson correlation=", cor7))
+abline(0,1,col='red')
+
+```
+
+> Ridge regression best linear unbiased predictor and gBLUP were implemented using the package ‘rrBLUP’, with gBLUP using a marker-based relationship matrix (Endelman, 2011), whereas the Bayesian models were implemented using the package ‘BGLR’ (Pérez & de los Campos, 2014).
+
+However, DeepGS implements GBLUP using BGLR!
+
+### Plot GBLUP (BGLR) vs rrBLUP predictions
+
+```{r}
+plot(pred7,pred6,main="Wheat grain length",xlab="rrBLUP",ylab="GBLUP (Bayesian, BGLR)")
+abline(0,1,col='red')
+```
+
