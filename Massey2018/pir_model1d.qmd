@@ -80,7 +80,43 @@ Notice that when $D_c$ is constant we recover the standard second order finite d
 
 ## Set up the model and parameters
 
-Set up parameters: 
+### Define functions 
+
+```{python}
+def D_rho_fun(c,r,p,p_auto=0):
+    return (beta(p+p_auto)/(beta(EC50)+beta(p+p_auto)))*(1-(c+r)/k)
+
+def beta(p):
+    return p/(k_m+p)
+```
+
+```{python}
+# define the right-hand side of the ODEs
+def pir1d(t, z):
+    c = z[0:N]
+    r = z[N:2*N]
+    p = z[2*N:]
+
+    # c_spatial = D_c*D_rho_fun(c,r,p,p_auto)*(c[im1]-2*c+c[ip1])/dx2
+    # r_spatial = D_r*D_rho_fun(c,r,p)*(r[im1]-2*r+r[ip1])/dx2
+    # p_spatial = D_p*(p[im1]-2*p+p[ip1])/dx2
+
+    # store the functional part of the diffusion term at mid points of the grid
+    # 0-th entry is at dx/2, 1-th is at 3dx/2, 2nd to last L-dx/2, last is also at L-dx/2
+    # this makes sense because then approximating a derivative across x=L should give 
+    # zero as we are implementing zero-flux boundary conditions 
+    D_rho_c_half = (D_rho_fun(c,r,p,p_auto) + D_rho_fun(c[ip1],r[ip1],p[ip1],p_auto))/2
+    D_rho_r_half = (D_rho_fun(c,r,p) + D_rho_fun(c[ip1],r[ip1],p[ip1]))/2
+    c_spatial = D_c*(D_rho_c_half*(c[ip1]-c)-D_rho_c_half[im1]*(c-c[im1]))/dx2
+    r_spatial = D_r*(D_rho_r_half*(r[ip1]-r)-D_rho_r_half[im1]*(r-r[im1]))/dx2
+    p_spatial = D_p*(p[im1]-2*p+p[ip1])/dx2
+
+
+    return np.concatenate((c_spatial + rho_c*D_rho_fun(c,r,p,p_auto)*c,r_spatial + rho_r*D_rho_fun(c,r,p)*r,p_spatial + eta_c*c - q_c*beta(p)*alpha*c - q_r*beta(p)*r))
+```
+
+
+### Set up parameters, ICs, etc: 
 
 ```{python}
 D_c = 0.1
@@ -97,6 +133,7 @@ k_m = 1
 eta_c = 1
 q_r = 1
 q_c = 1
+alpha = 1 - beta(p_auto)
 
 O2a = 1
 x0 = 1
@@ -138,7 +175,7 @@ tmax = 30
 nplots = 11
 ```
 
-### Define the mesh and helper functions
+### Define the mesh
 
 ```{python}
 dx = L/(N-1)
@@ -147,13 +184,6 @@ dx2 = dx**2
 xx = np.linspace(0,L,N)
 ```
 
-```{python}
-def D_rho_fun(c,r,p,p_auto=0):
-    return (beta(p+p_auto)/(beta(EC50)+beta(p+p_auto)))*(1-(c+r)/k)
-
-def beta(p):
-    return p/(k_m+p)
-```
 
 Define zero flux indices.
 
@@ -163,31 +193,6 @@ im1[0] = 1
 ip1 = np.arange(0,N, dtype=np.uint64)+1
 ip1[-1] = N-2
 ```
-```{python}
-# define the right-hand side of the ODEs
-def pir1d(t, z):
-    c = z[0:N]
-    r = z[N:2*N]
-    p = z[2*N:]
-
-    # c_spatial = D_c*D_rho_fun(c,r,p,p_auto)*(c[im1]-2*c+c[ip1])/dx2
-    # r_spatial = D_r*D_rho_fun(c,r,p)*(r[im1]-2*r+r[ip1])/dx2
-    # p_spatial = D_p*(p[im1]-2*p+p[ip1])/dx2
-
-    # store the functional part of the diffusion term at mid points of the grid
-    # 0-th entry is at dx/2, 1-th is at 3dx/2, 2nd to last L-dx/2, last is also at L-dx/2
-    # this makes sense because then approximating a derivative across x=L should give 
-    # zero as we are implementing zero-flux boundary conditions 
-    D_rho_c_half = (D_rho_fun(c,r,p,p_auto) + D_rho_fun(c[ip1],r[ip1],p[ip1],p_auto))/2
-    D_rho_r_half = (D_rho_fun(c,r,p) + D_rho_fun(c[ip1],r[ip1],p[ip1]))/2
-    c_spatial = D_c*(D_rho_c_half*(c[ip1]-c)-D_rho_c_half[im1]*(c-c[im1]))/dx2
-    r_spatial = D_r*(D_rho_r_half*(r[ip1]-r)-D_rho_r_half[im1]*(r-r[im1]))/dx2
-    p_spatial = D_p*(p[im1]-2*p+p[ip1])/dx2
-
-
-    return np.concatenate((c_spatial + rho_c*D_rho_fun(c,r,p,p_auto)*c,r_spatial + rho_r*D_rho_fun(c,r,p)*r,p_spatial + eta_c*c - q_c*c*p - q_r*r*p))
-```
-
 
 ```{python}
 tspan = [0, tmax] 
