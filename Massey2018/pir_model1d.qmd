@@ -23,6 +23,7 @@ jupyter: python3
 [Simulating PDGF-Driven Glioma Growth and Invasion in an Anatomically Accurate Brain Domain](https://doi.org/10.1007/s11538-017-0312-3)
 
 ```{python}
+# imports and helper functions
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -30,6 +31,12 @@ import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 from scipy.optimize import fsolve
 
+from IPython.display import Markdown
+
+def frexp10(x,n=3):
+    exp = int(np.floor(np.log10(abs(x))))
+    coeff = round(x / 10**exp, n)
+    return '{0}\\times 10^{{1}}'.format(coeff,exp)
 ```
 
 
@@ -276,6 +283,7 @@ sol = solve_ivp(pir1d, tspan, z0, t_eval=t_eval)
 ```
 
 ```{python}
+r_max = sol.y[N:2*N,].max()
 
 # plot the solution
 fig, ax = plt.subplots(3,1,sharex=True)
@@ -292,6 +300,49 @@ ax[2].set_xlabel('x')
 plt.show()
 ```
 
+This is quite similar. We could increase $\eta_c$ a bit to see if it compensates (parameter estimates are not well constrained anyway). 
+
+## Set $p_{auto}=0$ and $\eta_c=2e-4$
+
+```{python}
+eta_c = 2e-4
+p_auto = 0
+
+tspan = [0, tmax] 
+t_eval = np.linspace(0, tmax, nplots)
+rng = np.random.default_rng(1)
+
+c0 = infected_fraction*O2a*(xx<x0)
+r0 = (1-infected_fraction)*O2a*(xx<x0) + O2a*(xx>=x0)
+p0 = np.zeros(N)
+
+z0 = np.concatenate((c0,r0,p0))
+
+# solve the problem using solve_ivp, storing the solution in sol
+# https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.solve_ivp.html
+sol = solve_ivp(pir1d, tspan, z0, t_eval=t_eval)
+```
+
+```{python}
+r_max_eta_c_doubled = sol.y[N:2*N,].max()
+
+# plot the solution
+fig, ax = plt.subplots(3,1,sharex=True)
+ax[0].plot(xx,sol.y[0:N,])
+ax[0].set_title(r'PIR simulation: $\eta_c =$ %g, $p_{auto} =$ %g' % (eta_c, p_auto))
+ax[0].set_ylabel('c, infected cells')
+
+ax[1].plot(xx,sol.y[N:2*N,])
+ax[1].set_ylabel('r, recruited cells')
+
+ax[2].plot(xx,sol.y[2*N:,])
+ax[2].set_ylabel('p, PDGF')
+ax[2].set_xlabel('x')
+plt.show()
+```
+
+However, increasing $\eta_c$ means both $c$ and $r$ populations would proliferate faster - the max of $r$ is now $`{python} Markdown(frexp10(r_max_eta_c_doubled,2))`$ rather than $`{python} Markdown(frexp10(r_max,2))`$ (to 3 s.f.). 
+
 # Numerical method for the 2D code
 
 From [scmassey/2D_Proliferation-Invasion-Recruitment](https://github.com/scmassey/2D%5fProliferation-Invasion-Recruitment)
@@ -304,4 +355,4 @@ Above we use that approximation for the diffusion operator at time $t$. In the p
 
 Not sure if it is really Crank-Nicolson as I'm confused about a factor of two. 
 
-Notice [Phyllis Nicolson](https://en.wikipedia.org/wiki/Phyllis_Nicolson). 
+Notice [Phyllis Nicolson](https://en.wikipedia.org/wiki/Phyllis_Nicolson) of the *Crank-Nicolson* method. 
