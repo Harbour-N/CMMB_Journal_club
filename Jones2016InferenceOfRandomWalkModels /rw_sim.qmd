@@ -888,3 +888,259 @@ plt.gca().set_aspect(1.0)
 plt.title(f'Transition matrix after t={t[-1]}, (w,p,b)=({reg_pars['w']},{reg_pars['p']},{reg_pars['b']})')
 plt.show()
 ```
+
+# Revisit biased walk to try to get the "cross" patterns
+
+Like in Figure 5. We expect these to correspond to there being a preferred angle about half the time so that there are many points in the sequence where the next angle is the preferred angle even though the previous was not, and vice vera. 
+
+```{python}
+reg_pars = {
+'bias': np.pi/1,
+'w': 0.5,
+'p': 0,
+'b': 0.8,
+'dt': 1,
+}
+
+```
+
+## Simulate for a long time and look at transition matrix
+
+```{python}
+nt = 1000
+rng_seed = 2
+```
+
+...
+
+```{python}
+t, variables = rw_sim(np.array([0,0,0,0,0]),reg_pars,nt,rng_seed)
+```
+
+### plot results - clear a new figure
+
+```{python}
+xt = variables[2,]
+yt = variables[3,]
+
+plt.plot(xt,yt,'-o',label='Trajectory')
+plt.plot(xt[0],yt[0],'k*',markersize=15,label='Initial position')
+
+plt.title(f'Random walk after t={t[-1]}, (w,p,b)=({reg_pars['w']},{reg_pars['p']},{reg_pars['b']})')
+plt.xlabel('x(t)')
+plt.ylabel('y(t)')
+plt.legend()
+plt.gca().set_aspect(1.0)
+plt.show()
+
+```
+
+### Calculate transition matrix
+
+```{python}
+sample_size = variables.shape[1]
+fig = plt.figure(figsize=(12, 6))
+left = plt.subplot(121)
+right = plt.subplot(122, projection='polar')
+x = np.linspace(0, 2*np.pi, 500)
+ticks = [0, 0.15, 0.3]
+left.set_yticks(ticks)
+number_of_bins = int(np.sqrt(sample_size))
+left.hist(variables[1,:], density=True, bins=number_of_bins)
+left.set_title("Cartesian plot")
+left.set_xlim(0, 2*np.pi)
+left.grid(True)
+
+right.set_yticks(ticks)
+right.hist(variables[1,:], density=True, bins=number_of_bins,
+           label="Histogram")
+right.set_title("Polar plot")
+right.legend(bbox_to_anchor=(0.15, 1.06))
+```
+
+```{python}
+plt.hist2d(variables[1,0:nt],variables[1,1:nt+1],bins=np.arange(0,2*np.pi+0.01,np.pi/6))
+# plt.hist2d(variables[1,0:nt],variables[1,1:nt+1],bins=12)
+ticks = np.arange(0,2*np.pi+0.01,np.pi/4)
+plt.xticks(ticks)
+plt.yticks(ticks)
+plt.xlabel('Angle at t')
+plt.ylabel('Angle at t+1')
+plt.colorbar()
+plt.gca().set_aspect(1.0)
+plt.title(f'Transition matrix after t={t[-1]}, (w,p,b)=({reg_pars['w']},{reg_pars['p']},{reg_pars['b']})')
+plt.show()
+```
+
+We see a bit of a cross here. 
+
+## Maybe reduce w further?
+
+```{python}
+reg_pars = {
+'bias': np.pi/1,
+'w': 0.4,
+'p': 0,
+'b': 0.8,
+'dt': 1,
+}
+
+```
+
+### Simulate and look at transition matrix
+
+```{python}
+nt = 1000
+rng_seed = 2
+```
+
+...
+
+```{python}
+t, variables = rw_sim(np.array([0,0,0,0,0]),reg_pars,nt,rng_seed)
+```
+
+### plot results - clear a new figure
+
+```{python}
+xt = variables[2,]
+yt = variables[3,]
+
+plt.plot(xt,yt,'-o',label='Trajectory')
+plt.plot(xt[0],yt[0],'k*',markersize=15,label='Initial position')
+
+plt.title(f'Random walk after t={t[-1]}, (w,p,b)=({reg_pars['w']},{reg_pars['p']},{reg_pars['b']})')
+plt.xlabel('x(t)')
+plt.ylabel('y(t)')
+plt.legend()
+plt.gca().set_aspect(1.0)
+plt.show()
+
+```
+
+### Calculate transition matrix
+
+```{python}
+sample_size = variables.shape[1]
+fig = plt.figure(figsize=(12, 6))
+left = plt.subplot(121)
+right = plt.subplot(122, projection='polar')
+x = np.linspace(0, 2*np.pi, 500)
+ticks = [0, 0.15, 0.3]
+left.set_yticks(ticks)
+number_of_bins = int(np.sqrt(sample_size))
+left.hist(variables[1,:], density=True, bins=number_of_bins)
+left.set_title("Cartesian plot")
+left.set_xlim(0, 2*np.pi)
+left.grid(True)
+
+right.set_yticks(ticks)
+right.hist(variables[1,:], density=True, bins=number_of_bins,
+           label="Histogram")
+right.set_title("Polar plot")
+right.legend(bbox_to_anchor=(0.15, 1.06))
+```
+
+```{python}
+plt.hist2d(variables[1,0:nt],variables[1,1:nt+1],bins=np.arange(0,2*np.pi+0.01,np.pi/6))
+# plt.hist2d(variables[1,0:nt],variables[1,1:nt+1],bins=12)
+ticks = np.arange(0,2*np.pi+0.01,np.pi/4)
+plt.xticks(ticks)
+plt.yticks(ticks)
+plt.xlabel('Angle at t')
+plt.ylabel('Angle at t+1')
+plt.colorbar()
+plt.gca().set_aspect(1.0)
+plt.title(f'Transition matrix after t={t[-1]}, (w,p,b)=({reg_pars['w']},{reg_pars['p']},{reg_pars['b']})')
+plt.show()
+```
+
+We see a bit of a cross here. 
+
+
+## Try working from parameters in the paper
+
+```{python}
+bp = 0.3 # largest value of b' in Fig 6B
+pp = 0.13 # corresponding value of p'
+w = 0.31
+
+reg_pars = {
+'bias': np.pi/1,
+'w': w,
+'p': pp/(1-w),
+'b': bp/w,
+'dt': 1,
+}
+
+```
+
+### Simulate and look at transition matrix
+
+```{python}
+nt = 1000
+rng_seed = 2
+```
+
+...
+
+```{python}
+t, variables = rw_sim(np.array([0,0,0,0,0]),reg_pars,nt,rng_seed)
+```
+
+### plot results - clear a new figure
+
+```{python}
+xt = variables[2,]
+yt = variables[3,]
+
+plt.plot(xt,yt,'-o',label='Trajectory')
+plt.plot(xt[0],yt[0],'k*',markersize=15,label='Initial position')
+
+plt.title(f'Random walk after t={t[-1]}, (w,p,b)=({reg_pars['w']},{reg_pars['p']},{reg_pars['b']})')
+plt.xlabel('x(t)')
+plt.ylabel('y(t)')
+plt.legend()
+plt.gca().set_aspect(1.0)
+plt.show()
+
+```
+
+### Calculate transition matrix
+
+```{python}
+sample_size = variables.shape[1]
+fig = plt.figure(figsize=(12, 6))
+left = plt.subplot(121)
+right = plt.subplot(122, projection='polar')
+x = np.linspace(0, 2*np.pi, 500)
+ticks = [0, 0.15, 0.3]
+left.set_yticks(ticks)
+number_of_bins = int(np.sqrt(sample_size))
+left.hist(variables[1,:], density=True, bins=number_of_bins)
+left.set_title("Cartesian plot")
+left.set_xlim(0, 2*np.pi)
+left.grid(True)
+
+right.set_yticks(ticks)
+right.hist(variables[1,:], density=True, bins=number_of_bins,
+           label="Histogram")
+right.set_title("Polar plot")
+right.legend(bbox_to_anchor=(0.15, 1.06))
+```
+
+```{python}
+plt.hist2d(variables[1,0:nt],variables[1,1:nt+1],bins=np.arange(0,2*np.pi+0.01,np.pi/6))
+# plt.hist2d(variables[1,0:nt],variables[1,1:nt+1],bins=12)
+ticks = np.arange(0,2*np.pi+0.01,np.pi/4)
+plt.xticks(ticks)
+plt.yticks(ticks)
+plt.xlabel('Angle at t')
+plt.ylabel('Angle at t+1')
+plt.colorbar()
+plt.gca().set_aspect(1.0)
+plt.title(f'Transition matrix after t={t[-1]}, (w,p,b)=({reg_pars['w']},{reg_pars['p']},{reg_pars['b']})')
+plt.show()
+```
+
+We see a bit quite strong cross here. 
