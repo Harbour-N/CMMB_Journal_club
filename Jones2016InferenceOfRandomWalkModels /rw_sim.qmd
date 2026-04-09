@@ -1,0 +1,890 @@
+---
+title: Inference of random walk models to describe leukocyte migration
+authors:
+  - name: Markus Owen
+format: 
+  html:
+    embed-resources: true
+    code-fold: true
+    number-sections: true
+    toc: true
+    toc-depth: 3
+    date: now
+    date-modified: last-modified
+    date-format: "MMMM DD, YYYY, HH:mm:ss"
+  pdf: 
+    number-sections: true
+    colorlinks: true
+    include-in-header:
+      text:
+        \usepackage{mathtools}
+execute:
+  echo: true
+jupyter: python3
+---
+
+```{python}
+import numpy as np
+from numpy.random import default_rng
+from scipy.stats import truncnorm, bernoulli, vonmises
+from scipy.special import i0, iv
+import math
+import matplotlib.pyplot as plt
+```
+
+# Inference of random walk models to describe leukocyte migration
+
+[Inference of random walk models to describe leukocyte migration](https://doi.org/10.1088/1478-3975/12/6/066001)
+
+
+# Define the model simulations
+
+## Random walk model
+
+Fixed time step, step size is from a truncated positive normal, and step direction is sampled from a wrapped normal with mean either the previous direction (persistence) or a bias direction (biased) with standard deviation controlled by parameters $p$ and $b$, and choice of persistence or bias a Bernoulli choice determined by parameter $w$ ($w=1$ means always biased, $w=0$ means always persistent). 
+
+$$
+\begin{align}
+s_t &\sim \mathcal{N}^+ (0,1) \\[2ex]
+\alpha_t &\sim \mathcal{N}_w (\mu,\sigma) \\[2ex]
+r_t &\sim \mathcal{B} (w) \\[2ex]
+\mu_t &= \begin{cases}
+\beta &\mbox{ if } r_t=1 \\[1ex]
+\alpha_{t-1} &\mbox{ if } r_t=0 
+\end{cases}
+\end{align}
+$$
+
+Here, $\mathcal{N}_w$ is a wrapped normal distribution, sampled from a standard normal and taking results modulo $2\pi$. 
+
+Here I have introduced $r_t$ as notation for the Bernoulli random variable that determines if a step is biased ($r_t=1$) or persistent ($r_t=0$). 
+
+```{python}
+def rw_sim(ics,parameters,nt,rng_seed):
+    bias = parameters['bias']
+    w = parameters['w']
+    p = parameters['p']
+    b = parameters['b']
+    dt = parameters['dt']
+    
+    # variables stored as a matrix with one column per time point
+    t = np.zeros(nt+1)
+    nvariables = 5 # s_t, alpha_t, x_t, y_t, rw_type
+    variables = np.zeros((nvariables,nt+1))
+    variables[:,0]=ics
+
+    ## reset the random number generator and initialise using RNG_SEED
+    rng = default_rng(rng_seed)
+
+    if b>0: 
+        sigma_b = -2*np.log(b)
+    else:
+        sigma_b = 1e10
+
+    if p>0: 
+        sigma_p = -2*np.log(p)
+    else:
+        sigma_p = 1e10
+
+
+    ## time loop
+    j = 0
+    while j < nt:
+        s_old = variables[0,j]
+        alpha_old = variables[1,j]
+        x_old = variables[2,j]
+        y_old = variables[3,j]
+        s_new = truncnorm.rvs(0, np.inf, random_state=rng)
+        rw_type = bernoulli.rvs(w, random_state=rng) # 1 means biased, 0 means persistent
+        if rw_type==1: 
+            mu = bias 
+            sigma = sigma_b
+        else:
+            mu = alpha_old
+            sigma = sigma_p
+        alpha_new = np.mod( rng.normal(loc=mu,scale=sigma), 2*np.pi )
+        t[j+1] = t[j] + dt
+        # update the state
+        variables[0,j+1] = s_new
+        variables[1,j+1] = alpha_new
+        variables[2,j+1] = x_old + s_new*np.cos(alpha_new)
+        variables[3,j+1] = y_old + s_new*np.sin(alpha_new)
+        variables[4,j+1] = rw_type
+        j = j + 1
+
+    return t, variables
+
+```
+
+# Brownian motion
+
+```{python}
+reg_pars = {
+'bias': 0,
+'w': 0.5,
+'p': 0,
+'b': 0,
+'dt': 1,
+}
+
+```
+
+## Simulate for a few cells
+
+
+```{python}
+nt = 100
+rng_seed = 2
+rng = default_rng(rng_seed)
+num_cells = 10
+```
+
+
+```{python}
+x_store = []
+y_store = []
+for i in range(num_cells): 
+    t, variables = rw_sim(np.array([0,0,0,0,0]),reg_pars,nt,i)
+    x_store.append(variables[2,:])
+    y_store.append(variables[3,:]) 
+```
+
+### plot results
+
+```{python}
+for i in range(num_cells): 
+    plt.plot(x_store[i],y_store[i],'-o')
+plt.plot(0,0,'k*',markersize=15,label='Initial position')
+
+plt.title(f'Random walk after t={t[-1]}, (w,p,b)=({reg_pars['w']},{reg_pars['p']},{reg_pars['b']})')
+plt.xlabel('x(t)')
+plt.ylabel('y(t)')
+plt.legend()
+plt.gca().set_aspect(1.0)
+plt.show()
+
+```
+
+
+
+## Simulate for a long time and look at transition matrix
+
+```{python}
+nt = 1000
+rng_seed = 2
+```
+
+...
+
+```{python}
+t, variables = rw_sim(np.array([0,0,0,0,0]),reg_pars,nt,rng_seed)
+```
+
+### plot results - clear a new figure
+
+```{python}
+xt = variables[2,]
+yt = variables[3,]
+
+plt.plot(xt,yt,'-o',label='Trajectory')
+plt.plot(xt[0],yt[0],'k*',markersize=15,label='Initial position')
+
+plt.title(f'Random walk after t={t[-1]}, (w,p,b)=({reg_pars['w']},{reg_pars['p']},{reg_pars['b']})')
+plt.xlabel('x(t)')
+plt.ylabel('y(t)')
+plt.legend()
+plt.gca().set_aspect(1.0)
+plt.show()
+
+```
+
+### Calculate transition matrix
+
+```{python}
+sample_size = variables.shape[1]
+fig = plt.figure(figsize=(12, 6))
+left = plt.subplot(121)
+right = plt.subplot(122, projection='polar')
+x = np.linspace(0, 2*np.pi, 500)
+ticks = [0, 0.15, 0.3]
+left.set_yticks(ticks)
+number_of_bins = int(np.sqrt(sample_size))
+left.hist(variables[1,:], density=True, bins=number_of_bins)
+left.set_title("Cartesian plot")
+left.set_xlim(0, 2*np.pi)
+left.grid(True)
+
+right.set_yticks(ticks)
+right.hist(variables[1,:], density=True, bins=number_of_bins,
+           label="Histogram")
+right.set_title("Polar plot")
+right.legend(bbox_to_anchor=(0.15, 1.06))
+```
+
+```{python}
+plt.hist2d(variables[1,0:nt],variables[1,1:nt+1],bins=np.arange(0,2*np.pi+0.01,np.pi/6))
+# plt.hist2d(variables[1,0:nt],variables[1,1:nt+1],bins=12)
+ticks = np.arange(0,2*np.pi+0.01,np.pi/4)
+plt.xticks(ticks)
+plt.yticks(ticks)
+plt.xlabel('Angle at t')
+plt.ylabel('Angle at t+1')
+plt.colorbar()
+plt.gca().set_aspect(1.0)
+plt.title(f'Transition matrix after t={t[-1]}, (w,p,b)=({reg_pars['w']},{reg_pars['p']},{reg_pars['b']})')
+plt.show()
+```
+
+
+We should see no preference at all; the new angle should be unrelated to the previous one and shouldn't be biased to any particular direction. 
+
+
+# Persistent random walk
+
+```{python}
+reg_pars = {
+'bias': 0,
+'w': 0.1,
+'p': 0.5,
+'b': 0,
+'dt': 1,
+}
+
+```
+
+## Simulate 
+
+```{python}
+nt = 100
+rng_seed = 2
+```
+
+```{python}
+t, variables = rw_sim(np.array([0,0,0,0,0]),reg_pars,nt,rng_seed)
+```
+
+### plot results 
+
+```{python}
+xt = variables[2,]
+yt = variables[3,]
+
+plt.plot(xt,yt,'-o',label='Trajectory')
+plt.plot(xt[0],yt[0],'k*',markersize=15,label='Initial position')
+
+plt.title(f'Random walk after t={t[-1]}, (w,p,b)=({reg_pars['w']},{reg_pars['p']},{reg_pars['b']})')
+plt.xlabel('x(t)')
+plt.ylabel('y(t)')
+plt.legend()
+plt.gca().set_aspect(1.0)
+plt.show()
+
+```
+
+## Simulate for a long time and look at transition matrix
+
+```{python}
+nt = 1000
+rng_seed = 2
+```
+
+...
+
+```{python}
+t, variables = rw_sim(np.array([0,0,0,0,0]),reg_pars,nt,rng_seed)
+```
+
+### plot results - clear a new figure
+
+```{python}
+xt = variables[2,]
+yt = variables[3,]
+
+plt.plot(xt,yt,'-o',label='Trajectory')
+plt.plot(xt[0],yt[0],'k*',markersize=15,label='Initial position')
+
+plt.title(f'Random walk after t={t[-1]}, (w,p,b)=({reg_pars['w']},{reg_pars['p']},{reg_pars['b']})')
+plt.xlabel('x(t)')
+plt.ylabel('y(t)')
+plt.legend()
+plt.gca().set_aspect(1.0)
+plt.show()
+
+```
+
+### Calculate transition matrix
+
+```{python}
+sample_size = variables.shape[1]
+fig = plt.figure(figsize=(12, 6))
+left = plt.subplot(121)
+right = plt.subplot(122, projection='polar')
+x = np.linspace(0, 2*np.pi, 500)
+ticks = [0, 0.15, 0.3]
+left.set_yticks(ticks)
+number_of_bins = int(np.sqrt(sample_size))
+left.hist(variables[1,:], density=True, bins=number_of_bins)
+left.set_title("Cartesian plot")
+left.set_xlim(0, 2*np.pi)
+left.grid(True)
+
+right.set_yticks(ticks)
+right.hist(variables[1,:], density=True, bins=number_of_bins,
+           label="Histogram")
+right.set_title("Polar plot")
+right.legend(bbox_to_anchor=(0.15, 1.06))
+```
+
+```{python}
+plt.hist2d(variables[1,0:nt],variables[1,1:nt+1],bins=np.arange(0,2*np.pi+0.01,np.pi/6))
+# plt.hist2d(variables[1,0:nt],variables[1,1:nt+1],bins=12)
+ticks = np.arange(0,2*np.pi+0.01,np.pi/4)
+plt.xticks(ticks)
+plt.yticks(ticks)
+plt.xlabel('Angle at t')
+plt.ylabel('Angle at t+1')
+plt.colorbar()
+plt.gca().set_aspect(1.0)
+plt.title(f'Transition matrix after t={t[-1]}, (w,p,b)=({reg_pars['w']},{reg_pars['p']},{reg_pars['b']})')
+plt.show()
+```
+
+
+We see a weak preference for repeating the previous angle (higher values near the diagonal where $\alpha_{t+1}=\alpha_t$). 
+
+# Increase persistence
+
+We increase the persistence parameter to $p=0.9$ which means the standard deviation around the persistence angle is much reduced. $w=0.1$ means persistent steps are very likely and biased ones are not (and when they are biased, $b=0$ means the direction is actually uniformly random). 
+
+```{python}
+reg_pars = {
+'bias': 0,
+'w': 0.1,
+'p': 0.9,
+'b': 0,
+'dt': 1,
+}
+
+```
+
+## Simulate for a long time and look at steady state distribution
+
+```{python}
+nt = 100
+rng_seed = 2
+```
+
+...
+
+```{python}
+t, variables = rw_sim(np.array([0,0,0,0,0]),reg_pars,nt,rng_seed)
+```
+
+### plot results - clear a new figure
+
+```{python}
+xt = variables[2,]
+yt = variables[3,]
+
+plt.plot(xt,yt,'-o',label='Trajectory')
+plt.plot(xt[0],yt[0],'k*',markersize=15,label='Initial position')
+
+plt.title(f'Random walk after t={t[-1]}, (w,p,b)=({reg_pars['w']},{reg_pars['p']},{reg_pars['b']})')
+plt.xlabel('x(t)')
+plt.ylabel('y(t)')
+plt.legend()
+plt.gca().set_aspect(1.0)
+plt.show()
+
+```
+
+## Do many cells
+
+```{python}
+num_cells = 10
+```
+
+```{python}
+x_store = []
+y_store = []
+for i in range(num_cells): 
+    t, variables = rw_sim(np.array([0,0,0,0,0]),reg_pars,nt,i)
+    x_store.append(variables[2,:])
+    y_store.append(variables[3,:]) 
+```
+
+```{python}
+for i in range(num_cells): 
+    plt.plot(x_store[i],y_store[i],'-o')
+plt.plot(xt[0],yt[0],'k*',markersize=15,label='Initial position')
+
+plt.title(f'Random walk after t={t[-1]}, (w,p,b)=({reg_pars['w']},{reg_pars['p']},{reg_pars['b']})')
+plt.xlabel('x(t)')
+plt.ylabel('y(t)')
+plt.legend()
+plt.gca().set_aspect(1.0)
+plt.show()
+
+```
+
+## Make initial orientation random
+
+```{python}
+num_cells = 10
+```
+
+```{python}
+x_store = []
+y_store = []
+for i in range(num_cells): 
+    t, variables = rw_sim(np.array([0,2*np.pi*rng.uniform(),0,0,0]),reg_pars,nt,i)
+    x_store.append(variables[2,:])
+    y_store.append(variables[3,:]) 
+```
+
+```{python}
+for i in range(num_cells): 
+    plt.plot(x_store[i],y_store[i],'-o')
+plt.plot(xt[0],yt[0],'k*',markersize=15,label='Initial position')
+
+plt.title(f'Random walk after t={t[-1]}, (w,p,b)=({reg_pars['w']},{reg_pars['p']},{reg_pars['b']})')
+plt.xlabel('x(t)')
+plt.ylabel('y(t)')
+plt.legend()
+plt.gca().set_aspect(1.0)
+plt.show()
+
+```
+
+## Simulate for a long time and look at transition matrix
+
+```{python}
+nt = 1000
+rng_seed = 2
+```
+
+...
+
+```{python}
+t, variables = rw_sim(np.array([0,0,0,0,0]),reg_pars,nt,rng_seed)
+```
+
+### plot results - clear a new figure
+
+```{python}
+xt = variables[2,]
+yt = variables[3,]
+
+plt.plot(xt,yt,'-o',label='Trajectory')
+plt.plot(xt[0],yt[0],'k*',markersize=15,label='Initial position')
+
+plt.title(f'Random walk after t={t[-1]}, (w,p,b)=({reg_pars['w']},{reg_pars['p']},{reg_pars['b']})')
+plt.xlabel('x(t)')
+plt.ylabel('y(t)')
+plt.legend()
+plt.gca().set_aspect(1.0)
+plt.show()
+
+```
+
+### Calculate transition matrix
+
+```{python}
+sample_size = variables.shape[1]
+fig = plt.figure(figsize=(12, 6))
+left = plt.subplot(121)
+right = plt.subplot(122, projection='polar')
+x = np.linspace(0, 2*np.pi, 500)
+ticks = [0, 0.15, 0.3]
+left.set_yticks(ticks)
+number_of_bins = int(np.sqrt(sample_size))
+left.hist(variables[1,:], density=True, bins=number_of_bins)
+left.set_title("Cartesian plot")
+left.set_xlim(0, 2*np.pi)
+left.grid(True)
+
+right.set_yticks(ticks)
+right.hist(variables[1,:], density=True, bins=number_of_bins,
+           label="Histogram")
+right.set_title("Polar plot")
+right.legend(bbox_to_anchor=(0.15, 1.06))
+```
+
+```{python}
+plt.hist2d(variables[1,0:nt],variables[1,1:nt+1],bins=np.arange(0,2*np.pi+0.01,np.pi/6))
+# plt.hist2d(variables[1,0:nt],variables[1,1:nt+1],bins=12)
+ticks = np.arange(0,2*np.pi+0.01,np.pi/4)
+plt.xticks(ticks)
+plt.yticks(ticks)
+plt.xlabel('Angle at t')
+plt.ylabel('Angle at t+1')
+plt.colorbar()
+plt.gca().set_aspect(1.0)
+plt.title(f'Transition matrix after t={t[-1]}, (w,p,b)=({reg_pars['w']},{reg_pars['p']},{reg_pars['b']})')
+plt.show()
+```
+
+Now we see a strong preference for repeating the previous angle (higher values near the diagonal where $\alpha_{t+1}=\alpha_t$). 
+
+# Biased random walk
+
+```{python}
+reg_pars = {
+'bias': np.pi/4,
+'w': 0.9,
+'p': 0,
+'b': 0.5,
+'dt': 1,
+}
+
+```
+
+## Simulate for a long time and look at transition matrix
+
+```{python}
+nt = 1000
+rng_seed = 2
+```
+
+...
+
+```{python}
+t, variables = rw_sim(np.array([0,0,0,0,0]),reg_pars,nt,rng_seed)
+```
+
+### plot results - clear a new figure
+
+```{python}
+xt = variables[2,]
+yt = variables[3,]
+
+plt.plot(xt,yt,'-o',label='Trajectory')
+plt.plot(xt[0],yt[0],'k*',markersize=15,label='Initial position')
+
+plt.title(f'Random walk after t={t[-1]}, (w,p,b)=({reg_pars['w']},{reg_pars['p']},{reg_pars['b']})')
+plt.xlabel('x(t)')
+plt.ylabel('y(t)')
+plt.legend()
+plt.gca().set_aspect(1.0)
+plt.show()
+
+```
+
+### Calculate transition matrix
+
+```{python}
+sample_size = variables.shape[1]
+fig = plt.figure(figsize=(12, 6))
+left = plt.subplot(121)
+right = plt.subplot(122, projection='polar')
+x = np.linspace(0, 2*np.pi, 500)
+ticks = [0, 0.15, 0.3]
+left.set_yticks(ticks)
+number_of_bins = int(np.sqrt(sample_size))
+left.hist(variables[1,:], density=True, bins=number_of_bins)
+left.set_title("Cartesian plot")
+left.set_xlim(0, 2*np.pi)
+left.grid(True)
+
+right.set_yticks(ticks)
+right.hist(variables[1,:], density=True, bins=number_of_bins,
+           label="Histogram")
+right.set_title("Polar plot")
+right.legend(bbox_to_anchor=(0.15, 1.06))
+```
+
+```{python}
+plt.hist2d(variables[1,0:nt],variables[1,1:nt+1],bins=np.arange(0,2*np.pi+0.01,np.pi/6))
+# plt.hist2d(variables[1,0:nt],variables[1,1:nt+1],bins=12)
+ticks = np.arange(0,2*np.pi+0.01,np.pi/4)
+plt.xticks(ticks)
+plt.yticks(ticks)
+plt.xlabel('Angle at t')
+plt.ylabel('Angle at t+1')
+plt.colorbar()
+plt.gca().set_aspect(1.0)
+plt.title(f'Transition matrix after t={t[-1]}, (w,p,b)=({reg_pars['w']},{reg_pars['p']},{reg_pars['b']})')
+plt.show()
+```
+
+We see a weak preference for $\pi/4$ no matter what the previous angle was. 
+
+## Do many cells
+
+```{python}
+num_cells = 20
+```
+
+```{python}
+x_store = []
+y_store = []
+for i in range(num_cells): 
+    t, variables = rw_sim(np.array([0,0,0,0,0]),reg_pars,nt,i)
+    x_store.append(variables[2,:])
+    y_store.append(variables[3,:]) 
+```
+
+```{python}
+for i in range(num_cells): 
+    plt.plot(x_store[i],y_store[i],'-o',markersize=3)
+plt.plot(xt[0],yt[0],'k*',markersize=15,label='Initial position')
+
+plt.title(f'Biased random walk after t={t[-1]}, (w,p,b)=({reg_pars['w']},{reg_pars['p']},{reg_pars['b']})')
+plt.xlabel('x(t)')
+plt.ylabel('y(t)')
+plt.legend()
+plt.gca().set_aspect(1.0)
+plt.show()
+
+```
+
+
+
+## Make the bias stronger
+
+```{python}
+reg_pars = {
+'bias': np.pi/4,
+'w': 0.9,
+'p': 0,
+'b': 0.9,
+'dt': 1,
+}
+
+```
+
+## Simulate for a long time and look at transition matrix
+
+```{python}
+nt = 1000
+rng_seed = 2
+```
+
+...
+
+```{python}
+t, variables = rw_sim(np.array([0,0,0,0,0]),reg_pars,nt,rng_seed)
+```
+
+### plot results - clear a new figure
+
+```{python}
+xt = variables[2,]
+yt = variables[3,]
+
+plt.plot(xt,yt,'-o',label='Trajectory')
+plt.plot(xt[0],yt[0],'k*',markersize=15,label='Initial position')
+
+plt.title(f'Random walk after t={t[-1]}, (w,p,b)=({reg_pars['w']},{reg_pars['p']},{reg_pars['b']})')
+plt.xlabel('x(t)')
+plt.ylabel('y(t)')
+plt.legend()
+plt.gca().set_aspect(1.0)
+plt.show()
+
+```
+
+### Calculate transition matrix
+
+```{python}
+sample_size = variables.shape[1]
+fig = plt.figure(figsize=(12, 6))
+left = plt.subplot(121)
+right = plt.subplot(122, projection='polar')
+x = np.linspace(0, 2*np.pi, 500)
+ticks = [0, 0.15, 0.3]
+left.set_yticks(ticks)
+number_of_bins = int(np.sqrt(sample_size))
+left.hist(variables[1,:], density=True, bins=number_of_bins)
+left.set_title("Cartesian plot")
+left.set_xlim(0, 2*np.pi)
+left.grid(True)
+
+right.set_yticks(ticks)
+right.hist(variables[1,:], density=True, bins=number_of_bins,
+           label="Histogram")
+right.set_title("Polar plot")
+right.legend(bbox_to_anchor=(0.15, 1.06))
+```
+
+```{python}
+plt.hist2d(variables[1,0:nt],variables[1,1:nt+1],bins=np.arange(0,2*np.pi+0.01,np.pi/6))
+# plt.hist2d(variables[1,0:nt],variables[1,1:nt+1],bins=12)
+ticks = np.arange(0,2*np.pi+0.01,np.pi/4)
+plt.xticks(ticks)
+plt.yticks(ticks)
+plt.xlabel('Angle at t')
+plt.ylabel('Angle at t+1')
+plt.colorbar()
+plt.gca().set_aspect(1.0)
+plt.title(f'Transition matrix after t={t[-1]}, (w,p,b)=({reg_pars['w']},{reg_pars['p']},{reg_pars['b']})')
+plt.show()
+```
+
+We see a strong preference for $\pi/4$ no matter what the previous angle was. 
+
+# Can persistent look like Brownian?
+
+In the paper, Brownian motion with $(w,p,b)=(0.5,0,0)$ has high density when $w$ is smaller (peak at about $0.1$ and $p$ close to zero). This makes sense because the true parameter setting has infinite standard deviation for both persistent and biased components, so the value of $w$ doesn't really make any difference. 
+
+Put the other way round, if the walk is strongly persistent ($p$ close to one) then $w$ must also be close to one so that persistent steps rarely happen, and $b$ must be close to zero so that biased steps don't actually show much bias. 
+
+```{python}
+reg_pars = {
+'bias': 0,
+'w': 0.1,
+'p': 0,
+'b': 0.5,
+'dt': 1,
+}
+```
+
+## Simulate for a long time and look at transition matrix
+
+```{python}
+nt = 1000
+rng_seed = 2
+```
+
+...
+
+```{python}
+t, variables = rw_sim(np.array([0,0,0,0,0]),reg_pars,nt,rng_seed)
+```
+
+### plot results - clear a new figure
+
+```{python}
+xt = variables[2,]
+yt = variables[3,]
+
+plt.plot(xt,yt,'-o',label='Trajectory')
+plt.plot(xt[0],yt[0],'k*',markersize=15,label='Initial position')
+
+plt.title(f'Random walk after t={t[-1]}, (w,p,b)=({reg_pars['w']},{reg_pars['p']},{reg_pars['b']})')
+plt.xlabel('x(t)')
+plt.ylabel('y(t)')
+plt.legend()
+plt.gca().set_aspect(1.0)
+plt.show()
+
+```
+
+### Calculate transition matrix
+
+```{python}
+sample_size = variables.shape[1]
+fig = plt.figure(figsize=(12, 6))
+left = plt.subplot(121)
+right = plt.subplot(122, projection='polar')
+x = np.linspace(0, 2*np.pi, 500)
+ticks = [0, 0.15, 0.3]
+left.set_yticks(ticks)
+number_of_bins = int(np.sqrt(sample_size))
+left.hist(variables[1,:], density=True, bins=number_of_bins)
+left.set_title("Cartesian plot")
+left.set_xlim(0, 2*np.pi)
+left.grid(True)
+
+right.set_yticks(ticks)
+right.hist(variables[1,:], density=True, bins=number_of_bins,
+           label="Histogram")
+right.set_title("Polar plot")
+right.legend(bbox_to_anchor=(0.15, 1.06))
+```
+
+```{python}
+plt.hist2d(variables[1,0:nt],variables[1,1:nt+1],bins=np.arange(0,2*np.pi+0.01,np.pi/6))
+# plt.hist2d(variables[1,0:nt],variables[1,1:nt+1],bins=12)
+ticks = np.arange(0,2*np.pi+0.01,np.pi/4)
+plt.xticks(ticks)
+plt.yticks(ticks)
+plt.xlabel('Angle at t')
+plt.ylabel('Angle at t+1')
+plt.colorbar()
+plt.gca().set_aspect(1.0)
+plt.title(f'Transition matrix after t={t[-1]}, (w,p,b)=({reg_pars['w']},{reg_pars['p']},{reg_pars['b']})')
+plt.show()
+```
+
+# Can biased look like Brownian?
+
+As above, if the walk is biased, $w$ close to one so most steps are of biased type, then the amount of bias should be small ($b$ close to zero); $p$ can be larger because very few steps will be of that type. 
+
+```{python}
+reg_pars = {
+'bias': 0,
+'w': 0.9,
+'p': 0.9,
+'b': 0.1,
+'dt': 1,
+}
+```
+
+## Simulate for a long time and look at transition matrix
+
+```{python}
+nt = 1000
+rng_seed = 2
+```
+
+...
+
+```{python}
+t, variables = rw_sim(np.array([0,0,0,0,0]),reg_pars,nt,rng_seed)
+```
+
+### plot results - clear a new figure
+
+```{python}
+xt = variables[2,]
+yt = variables[3,]
+
+plt.plot(xt,yt,'-o',label='Trajectory')
+plt.plot(xt[0],yt[0],'k*',markersize=15,label='Initial position')
+
+plt.title(f'Random walk after t={t[-1]}, (w,p,b)=({reg_pars['w']},{reg_pars['p']},{reg_pars['b']})')
+plt.xlabel('x(t)')
+plt.ylabel('y(t)')
+plt.legend()
+plt.gca().set_aspect(1.0)
+plt.show()
+
+```
+
+### Calculate transition matrix
+
+```{python}
+sample_size = variables.shape[1]
+fig = plt.figure(figsize=(12, 6))
+left = plt.subplot(121)
+right = plt.subplot(122, projection='polar')
+x = np.linspace(0, 2*np.pi, 500)
+ticks = [0, 0.15, 0.3]
+left.set_yticks(ticks)
+number_of_bins = int(np.sqrt(sample_size))
+left.hist(variables[1,:], density=True, bins=number_of_bins)
+left.set_title("Cartesian plot")
+left.set_xlim(0, 2*np.pi)
+left.grid(True)
+
+right.set_yticks(ticks)
+right.hist(variables[1,:], density=True, bins=number_of_bins,
+           label="Histogram")
+right.set_title("Polar plot")
+right.legend(bbox_to_anchor=(0.15, 1.06))
+```
+
+```{python}
+plt.hist2d(variables[1,0:nt],variables[1,1:nt+1],bins=np.arange(0,2*np.pi+0.01,np.pi/6))
+# plt.hist2d(variables[1,0:nt],variables[1,1:nt+1],bins=12)
+ticks = np.arange(0,2*np.pi+0.01,np.pi/4)
+plt.xticks(ticks)
+plt.yticks(ticks)
+plt.xlabel('Angle at t')
+plt.ylabel('Angle at t+1')
+plt.colorbar()
+plt.gca().set_aspect(1.0)
+plt.title(f'Transition matrix after t={t[-1]}, (w,p,b)=({reg_pars['w']},{reg_pars['p']},{reg_pars['b']})')
+plt.show()
+```
